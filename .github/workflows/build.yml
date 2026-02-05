@@ -379,8 +379,6 @@ jobs:
             chmod +x "$path"
           done
 
-          # NOTE: no git commit here (kernel_workspace is not a single git repo)
-
       - name: Add KernelSU (ReSukiSU)
         run: |
           cd kernel_workspace
@@ -413,7 +411,6 @@ jobs:
           KSU_API_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/$BRANCH_NAME/kernel/Kbuild" | \
             grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]' || true)
 
-          # Fix: "4.1.O" -> "4.1.0"
           if [[ -z "$KSU_API_VERSION" || "$(printf '%s\n' "$KSU_API_VERSION" "4.1.0" | sort -V | head -n1)" != "4.1.0" ]]; then
             KSU_API_VERSION="4.1.0"
           fi
@@ -517,7 +514,6 @@ jobs:
           SUSFS_BRANCH="gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}"
           echo "SUSFS_BRANCH_NAME=${SUSFS_BRANCH}" >> "$GITHUB_ENV"
 
-          # Determine version locally and also export to env
           if [ -f "VERSION" ]; then
             SUSFS_VER="$(tr -d '\n' < VERSION)"
           elif grep -q "SUSFS.*v[0-9]" README.md 2>/dev/null; then
@@ -794,6 +790,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Définir toutes les variables en dehors du heredoc
           KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-N/A}"
           KSUVER="${KSUVER:-N/A}"
           TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
@@ -806,10 +803,11 @@ jobs:
           IMAGE_SHA256="${IMAGE_SHA256:-N/A}"
           IMAGE_SIZE="${IMAGE_SIZE:-N/A}"
 
+          # Calculer les statuts AVANT le heredoc
           if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_ENABLED="✅ Enabled"
             SUSFS_VERSION="${SUSVER:-Latest upstream}"
-            SUSFS_BRANCH_NAME="${SUSFS_BRANCH_NAME:-gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}"
+            SUSFS_BRANCH_NAME="${SUSFS_BRANCH_NAME:-gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}}"
             SUSFS_COMMIT_SHA="${SUSFS_COMMIT_SHA:-Latest}"
 
             if [ "$SUSFS_COMMIT_SHA" != "Latest" ] && [ "$SUSFS_COMMIT_SHA" != "N/A" ]; then
@@ -825,7 +823,6 @@ jobs:
             SUSFS_COMMIT_LINK="N/A"
           fi
 
-          # Always ReSukiSU now
           KSU_REPO="ReSukiSU/ReSukiSU"
 
           if [ "$KSU_COMMIT_SHA" != "N/A" ] && [ -n "$KSU_COMMIT_SHA" ]; then
@@ -834,12 +831,50 @@ jobs:
             KSU_COMMIT_LINK="N/A"
           fi
 
-          KPM_STATUS="${{ github.event.inputs.KPM == 'KPM' && '✅ Enabled' || '❌ Disabled' }}"
-          LSM_STATUS="${{ github.event.inputs.LSM == 'true' && '✅ Enabled' || '❌ Disabled' }}"
-          BBR_ECN_STATUS="${{ github.event.inputs.BBR_ECN == 'true' && '✅ Enabled' || '❌ Disabled' }}"
-          NETFILTER_STATUS="${{ github.event.inputs.NETFILTER == 'true' && '✅ Enabled (IPSET & IPv6 NAT)' || '❌ Disabled' }}"
-          UNICODE_FIX_STATUS="${{ github.event.inputs.UNICODE_BYPASS == 'true' && '✅ Enabled' || '❌ Disabled' }}"
+          # Préparer les statuts des fonctionnalités
+          if [ "${{ github.event.inputs.KPM }}" = "KPM" ]; then
+            KPM_STATUS="✅ Enabled"
+          else
+            KPM_STATUS="❌ Disabled"
+          fi
 
+          if [ "${{ github.event.inputs.LSM }}" = "true" ]; then
+            LSM_STATUS="✅ Enabled"
+          else
+            LSM_STATUS="❌ Disabled"
+          fi
+
+          if [ "${{ github.event.inputs.BBR_ECN }}" = "true" ]; then
+            BBR_ECN_STATUS="✅ Enabled"
+          else
+            BBR_ECN_STATUS="❌ Disabled"
+          fi
+
+          if [ "${{ github.event.inputs.NETFILTER }}" = "true" ]; then
+            NETFILTER_STATUS="✅ Enabled (IPSET & IPv6 NAT)"
+          else
+            NETFILTER_STATUS="❌ Disabled"
+          fi
+
+          if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "true" ]; then
+            UNICODE_FIX_STATUS="✅ Enabled"
+          else
+            UNICODE_FIX_STATUS="❌ Disabled"
+          fi
+
+          if [ "${{ github.event.inputs.SUSFS_DEV }}" = "true" ]; then
+            SUSFS_DEV_MODE="✅ Yes"
+          else
+            SUSFS_DEV_MODE="❌ No"
+          fi
+
+          if [ "${{ github.event.inputs.BUILD_NOCCACHE }}" = "true" ]; then
+            CCACHE_STATUS="❌ Disabled"
+          else
+            CCACHE_STATUS="✅ Enabled"
+          fi
+
+          # Maintenant générer le rapport avec TOUTES les variables définies
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           # 🎉 Oneplus 15 ReSukiSU Kernel Build Complete
 
@@ -861,8 +896,8 @@ jobs:
           | **SUSFS** | ${SUSFS_ENABLED} |
           | **SUSFS Version** | ${SUSFS_VERSION} |
           | **SUSFS Branch** | ${SUSFS_BRANCH_NAME} |
-          | **SUSFS Dev Mode** | ${{ github.event.inputs.SUSFS_DEV == 'true' && '✅ Yes' || '❌ No' }} |
-          | **Ccache** | ${{ github.event.inputs.BUILD_NOCCACHE == 'true' && '❌ Disabled' || '✅ Enabled' }} |
+          | **SUSFS Dev Mode** | ${SUSFS_DEV_MODE} |
+          | **Ccache** | ${CCACHE_STATUS} |
           | **Build Time** | ${BUILD_TIME} |
           | **Warnings** | ${WARNINGS_COUNT} |
 
