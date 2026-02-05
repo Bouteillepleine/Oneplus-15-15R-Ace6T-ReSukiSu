@@ -1,4 +1,4 @@
-# Build OnePlus (GKI) — ReSukiSU Kernel Builder for Oneplus 15
+# Build OnePlus 15 — ReSukiSU Kernel Builder
 
 A GitHub Actions workflow that builds an **Android GKI kernel**, integrates **ReSukiSU**, optionally applies **SUSFS**, and packages the result as a flashable **AnyKernel3 ZIP**.
 
