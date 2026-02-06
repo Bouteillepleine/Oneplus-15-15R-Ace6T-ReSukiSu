@@ -18,6 +18,7 @@ on:
         default: ReSuki
         options:
           - ReSuki
+          - SukiSU
 
       KPM:
         type: choice
@@ -157,6 +158,35 @@ jobs:
           echo "Selected SUSFS_DEV: ${{ github.event.inputs.SUSFS_DEV }}"
           echo "Selected UNICODE_BYPASS: ${{ github.event.inputs.UNICODE_BYPASS }}"
           echo "-----------------------"
+
+      # --- OPTION A: switch centralisé (MANAGER_SOURCE -> variables) ---
+      - name: 🔀 Resolve MANAGER_SOURCE (switch)
+        id: mgr
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ github.event.inputs.MANAGER_SOURCE }}" in
+            ReSuki)
+              echo "KSU_OWNER=ReSukiSU" >> "$GITHUB_ENV"
+              echo "KSU_REPO=ReSukiSU" >> "$GITHUB_ENV"
+              echo "KSU_SETUP_BRANCH=main" >> "$GITHUB_ENV"
+              echo "KSU_LABEL=ReSuki" >> "$GITHUB_ENV"
+              ;;
+            SukiSU)
+              echo "KSU_OWNER=SukiSU" >> "$GITHUB_ENV"
+              echo "KSU_REPO=SukiSU" >> "$GITHUB_ENV"
+              echo "KSU_SETUP_BRANCH=main" >> "$GITHUB_ENV"
+              echo "KSU_LABEL=SukiSU" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unknown MANAGER_SOURCE: ${{ github.event.inputs.MANAGER_SOURCE }}" >&2
+              exit 2
+              ;;
+          esac
+
+          echo "KSU_GH_REPO=${KSU_OWNER}/${KSU_REPO}" >> "$GITHUB_ENV"
+          echo "KSU_SETUP_URL=https://raw.githubusercontent.com/${KSU_OWNER}/${KSU_REPO}/${KSU_SETUP_BRANCH}/kernel/setup.sh" >> "$GITHUB_ENV"
 
       - name: Check Disk Space
         run: df -h /
@@ -381,7 +411,8 @@ jobs:
             chmod +x "$path"
           done
 
-      - name: Add KernelSU (ReSukiSU)
+      # --- OPTION A: step unique, dynamique selon MANAGER_SOURCE ---
+      - name: Add KernelSU (dynamic)
         run: |
           set -euo pipefail
           cd kernel_workspace
@@ -399,10 +430,11 @@ jobs:
           echo "Branch name: $BRANCH_NAME"
           [[ -n "${CUSTOM_TAG:-}" ]] && echo "Custom version tag: $CUSTOM_TAG" || echo "Custom version tag: Not enabled"
           [[ -n "${MANUAL_HASH:-}" ]] && echo "Manual hash: $MANUAL_HASH" || echo "Manual hash: Not enabled"
-          echo "Manager Source: ReSuki"
+          echo "Manager Source: ${{ github.event.inputs.MANAGER_SOURCE }}"
+          echo "KernelSU Repo: ${KSU_GH_REPO:-N/A}"
 
-          echo "📥 Installing ReSukiSU..."
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$BRANCH_NAME"
+          echo "📥 Installing ${{ github.event.inputs.MANAGER_SOURCE }}..."
+          curl -LSs "${KSU_SETUP_URL}" | bash -s "$BRANCH_NAME"
 
           cd ./KernelSU
 
@@ -412,7 +444,7 @@ jobs:
             SHORT_HASH=${MANUAL_HASH:0:8}
           fi
 
-          KSU_API_VERSION="$(curl -fsSL "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/$BRANCH_NAME/kernel/Kbuild" \
+          KSU_API_VERSION="$(curl -fsSL "https://raw.githubusercontent.com/${KSU_OWNER}/${KSU_REPO}/${BRANCH_NAME}/kernel/Kbuild" \
             | grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]' || true)"
 
           if [[ -z "$KSU_API_VERSION" ]]; then
@@ -840,15 +872,15 @@ jobs:
             SUSFS_COMMIT_LINK="N/A"
           fi
 
-          KSU_REPO="ReSukiSU/ReSukiSU"
-          if [ "$KSU_COMMIT_SHA" != "N/A" ] && [ -n "$KSU_COMMIT_SHA" ]; then
+          KSU_REPO="${KSU_GH_REPO:-N/A}"
+          if [ "$KSU_COMMIT_SHA" != "N/A" ] && [ -n "$KSU_COMMIT_SHA" ] && [ "$KSU_REPO" != "N/A" ]; then
             KSU_COMMIT_LINK="[\`${KSU_COMMIT_SHA:0:8}\`](https://github.com/${KSU_REPO}/commit/${KSU_COMMIT_SHA})"
           else
             KSU_COMMIT_LINK="N/A"
           fi
 
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          # 🎉 OnePlus 15 ReSukiSU Kernel Build Complete
+          # 🎉 OnePlus 15 ${{ github.event.inputs.MANAGER_SOURCE }} Kernel Build Complete
 
           ## 📱 Device Information
           | Property | Value |
@@ -861,7 +893,7 @@ jobs:
           ## 🔧 Build Configuration
           | Component | Version/Setting |
           |-----------|----------------|
-          | **Manager Source** | ReSuki |
+          | **Manager Source** | ${{ github.event.inputs.MANAGER_SOURCE }} |
           | **KSU Version** | v${KSUVER} |
           | **SUSFS** | ${SUSFS_ENABLED} |
           | **SUSFS Version** | ${SUSFS_VERSION} |
@@ -881,7 +913,7 @@ jobs:
           ## 🔗 Source Commits
           | Component | Commit |
           |-----------|--------|
-          | **ReSukiSU** | ${KSU_COMMIT_LINK} |
+          | **${{ github.event.inputs.MANAGER_SOURCE }}** | ${KSU_COMMIT_LINK} |
           | **SUSFS** | ${SUSFS_COMMIT_LINK} |
           EOF
 
