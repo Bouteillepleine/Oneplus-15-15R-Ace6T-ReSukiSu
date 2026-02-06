@@ -118,6 +118,11 @@ jobs:
       BUILD_METHOD: "GKI"
       ANDROID_VERSION: "16"
 
+      # ✅ requis pour le mode SukiSU (manifest GitHub)
+      # Ajuste ces valeurs selon ton repo de manifest.
+      MANIFEST_REPO: "Bouteillepleine"
+      MANIFEST_BRANCH: "main"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -174,7 +179,6 @@ jobs:
               KSU_SETUP_BRANCH="main"
               ;;
             SukiSU)
-              # "SukiSU" option -> SukiSU-Ultra repo (matches your working setup.sh source)
               KSU_OWNER="SukiSU-Ultra"
               KSU_REPO="SukiSU-Ultra"
               KSU_SETUP_BRANCH="main"
@@ -258,28 +262,89 @@ jobs:
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
 
-      - name: Initialize Repo and Sync
+      # -------------------------------
+      # ✅ Repo init/sync: ReSuki (AOSP)
+      # -------------------------------
+      - name: Initialize Repo and Sync (AOSP/ReSuki)
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'ReSuki' }}
         run: |
           set -euo pipefail
+          rm -rf kernel_workspace
           mkdir -p kernel_workspace
           cd kernel_workspace
+
           FORMATTED_BRANCH="${{ github.event.inputs.FILE }}"
           repo init -u https://android.googlesource.com/kernel/manifest \
             -b "common-${FORMATTED_BRANCH}" --depth=1 --no-clone-bundle --no-tags
+
           REMOTE_BRANCH="$(git ls-remote https://android.googlesource.com/kernel/common "${FORMATTED_BRANCH}" || true)"
           DEFAULT_MANIFEST_PATH=.repo/manifests/default.xml
           if grep -q deprecated <<< "$REMOTE_BRANCH"; then
             sed -i "s/\"${FORMATTED_BRANCH}\"/\"deprecated\/${FORMATTED_BRANCH}\"/g" "$DEFAULT_MANIFEST_PATH"
           fi
+
           repo sync -c -j"$(nproc)" --no-clone-bundle --no-tags --force-sync
-          # ✅ gros gain disque (ne pas refaire repo sync après)
+
           rm -rf .repo/projects .repo/project-objects || true
+
           for dir in common; do
             if [ -e "$dir/BUILD.bazel" ]; then
               sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' "$dir/BUILD.bazel"
             fi
             rm -f "$dir/android/abi_gki_protected_exports_"* 2>/dev/null || true
           done
+
+      # -----------------------------------------
+      # ✅ Repo init/sync: SukiSU (GitHub manifest)
+      # -----------------------------------------
+      - name: Initialize Repo and Sync (SukiSU manifest)
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'SukiSU' }}
+        env:
+          FILE: ${{ github.event.inputs.FILE }}
+        run: |
+          set -euo pipefail
+          rm -rf kernel_workspace
+          mkdir -p kernel_workspace
+          cd kernel_workspace
+
+          mkdir -p .repo/manifests
+          cp "$GITHUB_WORKSPACE/.repo/manifests_fallback/${FILE}.xml" ".repo/manifests/${FILE}.xml"
+
+          MANIFEST_REPO="${{ env.MANIFEST_REPO }}"
+          MANIFEST_BRANCH="${{ env.MANIFEST_BRANCH }}"
+          BASE_URL="https://github.com/${MANIFEST_REPO}/kernel_manifest.git"
+
+          echo "MANIFEST_REPO=$MANIFEST_REPO"
+          echo "MANIFEST_BRANCH=$MANIFEST_BRANCH"
+          echo "Using manifest: $BASE_URL -m ${FILE}.xml"
+
+          repo init -u "$BASE_URL" -b "$MANIFEST_BRANCH" -m "${FILE}.xml" --depth=1 --no-clone-bundle --no-tags
+          repo sync -c -j"$(nproc)" --no-clone-bundle --no-tags --force-sync
+
+          for dir in kernel_platform/common kernel_platform/msm-kernel; do
+            if [ -e "$dir/BUILD.bazel" ]; then
+              sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' "$dir/BUILD.bazel"
+            fi
+            rm -f "$dir/android/abi_gki_protected_exports_"* 2>/dev/null || echo "No protected exports in $dir"
+          done
+
+      - name: Normalize kernel tree layout (SukiSU)
+        if: ${{ github.event.inputs.MANAGER_SOURCE == 'SukiSU' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd kernel_workspace
+
+          rm -f common msm-kernel external build tools || true
+
+          ln -s kernel_platform/common common
+          ln -s kernel_platform/msm-kernel msm-kernel || true
+          [ -d kernel_platform/external ] && ln -s kernel_platform/external external || true
+          [ -d kernel_platform/build ] && ln -s kernel_platform/build build || true
+          [ -d kernel_platform/tools ] && ln -s kernel_platform/tools tools || true
+
+          echo "✅ Layout normalized:"
+          ls -la
 
       - name: Kernel Version Handling
         run: |
