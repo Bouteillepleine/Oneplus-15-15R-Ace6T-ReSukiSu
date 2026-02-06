@@ -159,34 +159,51 @@ jobs:
           echo "Selected UNICODE_BYPASS: ${{ github.event.inputs.UNICODE_BYPASS }}"
           echo "-----------------------"
 
-      # --- OPTION A: switch centralisé (MANAGER_SOURCE -> variables) ---
       - name: 🔀 Resolve MANAGER_SOURCE (switch)
         id: mgr
         shell: bash
         run: |
           set -euo pipefail
 
-          case "${{ github.event.inputs.MANAGER_SOURCE }}" in
+          MANAGER_SOURCE="${{ github.event.inputs.MANAGER_SOURCE }}"
+
+          case "$MANAGER_SOURCE" in
             ReSuki)
-              echo "KSU_OWNER=ReSukiSU" >> "$GITHUB_ENV"
-              echo "KSU_REPO=ReSukiSU" >> "$GITHUB_ENV"
-              echo "KSU_SETUP_BRANCH=main" >> "$GITHUB_ENV"
-              echo "KSU_LABEL=ReSuki" >> "$GITHUB_ENV"
+              KSU_OWNER="ReSukiSU"
+              KSU_REPO="ReSukiSU"
+              KSU_SETUP_BRANCH="main"
+              KSU_LABEL="ReSuki"
               ;;
             SukiSU)
-              echo "KSU_OWNER=SukiSU" >> "$GITHUB_ENV"
-              echo "KSU_REPO=SukiSU" >> "$GITHUB_ENV"
-              echo "KSU_SETUP_BRANCH=main" >> "$GITHUB_ENV"
-              echo "KSU_LABEL=SukiSU" >> "$GITHUB_ENV"
+              KSU_OWNER="SukiSU"
+              KSU_REPO="SukiSU"
+              KSU_SETUP_BRANCH="main"
+              KSU_LABEL="SukiSU"
               ;;
             *)
-              echo "Unknown MANAGER_SOURCE: ${{ github.event.inputs.MANAGER_SOURCE }}" >&2
+              echo "Unknown MANAGER_SOURCE: $MANAGER_SOURCE" >&2
               exit 2
               ;;
           esac
 
-          echo "KSU_GH_REPO=${KSU_OWNER}/${KSU_REPO}" >> "$GITHUB_ENV"
-          echo "KSU_SETUP_URL=https://raw.githubusercontent.com/${KSU_OWNER}/${KSU_REPO}/${KSU_SETUP_BRANCH}/kernel/setup.sh" >> "$GITHUB_ENV"
+          KSU_GH_REPO="${KSU_OWNER}/${KSU_REPO}"
+          KSU_SETUP_URL="https://raw.githubusercontent.com/${KSU_OWNER}/${KSU_REPO}/${KSU_SETUP_BRANCH}/kernel/setup.sh"
+
+          {
+            echo "KSU_OWNER=$KSU_OWNER"
+            echo "KSU_REPO=$KSU_REPO"
+            echo "KSU_SETUP_BRANCH=$KSU_SETUP_BRANCH"
+            echo "KSU_LABEL=$KSU_LABEL"
+            echo "KSU_GH_REPO=$KSU_GH_REPO"
+            echo "KSU_SETUP_URL=$KSU_SETUP_URL"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "owner=$KSU_OWNER"
+            echo "repo=$KSU_REPO"
+            echo "setup_url=$KSU_SETUP_URL"
+            echo "label=$KSU_LABEL"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check Disk Space
         run: df -h /
@@ -270,7 +287,6 @@ jobs:
 
           repo sync -c -j"$(nproc)" --no-clone-bundle --no-tags --force-sync
 
-          # ✅ gros gain disque (ne pas refaire repo sync après)
           rm -rf .repo/projects .repo/project-objects || true
 
           for dir in common; do
@@ -299,8 +315,6 @@ jobs:
           else
             echo "No BRANCH found in build.config files" >&2
           fi
-
-          ORIG_VERSION=$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' ./common/Makefile)
 
           SUBLEVEL_INPUT="${{ github.event.inputs.SUBLEVEL }}"
           if [ -n "$SUBLEVEL_INPUT" ]; then
@@ -355,7 +369,6 @@ jobs:
             common/scripts/setlocalversion \
             msm-kernel/scripts/setlocalversion \
             external/dtc/scripts/setlocalversion; do
-
             [ -f "$path" ] || continue
 
             echo "Modifying: $path"
@@ -390,7 +403,6 @@ jobs:
             common/scripts/setlocalversion \
             msm-kernel/scripts/setlocalversion \
             external/dtc/scripts/setlocalversion; do
-
             [ -f "$path" ] || continue
 
             echo "Modifying: $path"
@@ -411,10 +423,13 @@ jobs:
             chmod +x "$path"
           done
 
-      # --- OPTION A: step unique, dynamique selon MANAGER_SOURCE ---
       - name: Add KernelSU (dynamic)
         run: |
           set -euo pipefail
+          : "${KSU_SETUP_URL:?KSU_SETUP_URL not set (Resolve MANAGER_SOURCE step failed?)}"
+          : "${KSU_OWNER:?KSU_OWNER not set}"
+          : "${KSU_REPO:?KSU_REPO not set}"
+
           cd kernel_workspace
 
           VERSION_OFFSET=30700
@@ -500,7 +515,7 @@ jobs:
           grep "KSU_VERSION" kernel/Kbuild || true
           echo "::endgroup::"
 
-      - name: Apply Patches (ReSukiSU)
+      - name: Apply Patches
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
