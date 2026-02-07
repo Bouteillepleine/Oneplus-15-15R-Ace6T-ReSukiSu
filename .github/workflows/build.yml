@@ -379,86 +379,128 @@ jobs:
             chmod +x "$path"
           done
 
-      - name: Add KernelSU (ReSukiSU)
+      - name: Add ReSukiSU
+        shell: bash
         run: |
+          set -euo pipefail
           cd kernel_workspace
 
           KSU_META="${{ github.event.inputs.KSU_META }}"
+          MANAGER_BRANCH="${{ steps.manager.outputs.manager_branch }}"
 
+          echo "::group::🔍 Parsing KSU_META"
           if [[ "$(grep -o '/' <<< "$KSU_META" | wc -l)" -lt 2 ]]; then
-            echo "Error: KSU_META parameter missing required '/' separator"
+            echo "::error::KSU_META parameter missing required '/' separator"
+            echo "::error::Format: branch/custom_tag(optional)/commit_hash(optional)"
+            echo "::error::Current: $KSU_META"
             exit 10
           fi
 
           IFS='/' read -r BRANCH_NAME CUSTOM_TAG MANUAL_HASH <<< "$KSU_META"
-
           echo "Branch name: $BRANCH_NAME"
-          [[ -n "$CUSTOM_TAG" ]] && echo "Custom version tag: $CUSTOM_TAG" || echo "Custom version tag: Not enabled"
-          [[ -n "$MANUAL_HASH" ]] && echo "Manual hash: $MANUAL_HASH" || echo "Manual hash: Not enabled"
-          echo "Manager Source: ReSuki"
+          [[ -n "${CUSTOM_TAG:-}" ]] && echo "Custom version tag: $CUSTOM_TAG" || echo "Custom version tag: Not enabled"
+          [[ -n "${MANUAL_HASH:-}" ]] && echo "Manual hash: $MANUAL_HASH" || echo "Manual hash: Not enabled"
+          echo "Manager branch: $MANAGER_BRANCH"
+          echo "::endgroup::"
 
-          echo "📥 Installing ReSukiSU..."
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$BRANCH_NAME"
+          echo "::group::📥 Installing ReSukiSU"
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/${MANAGER_BRANCH}/kernel/setup.sh" | bash -s "$BRANCH_NAME"
+          echo "::endgroup::"
 
           cd ./KernelSU
 
-          if [[ -n "$MANUAL_HASH" ]]; then
-            git fetch origin "$BRANCH_NAME" --depth=50
+          echo "::group::🔀 Optional checkout to manual commit"
+          if [[ -n "${MANUAL_HASH:-}" ]]; then
+            git fetch origin "$BRANCH_NAME" --depth=50 || git fetch origin "$BRANCH_NAME"
             git checkout "$MANUAL_HASH"
-            SHORT_HASH=${MANUAL_HASH:0:8}
+            SHORT_HASH="${MANUAL_HASH:0:8}"
+            echo "Checked out manual commit: $SHORT_HASH"
+          else
+            echo "Using latest commit on branch: $BRANCH_NAME"
           fi
+          echo "::endgroup::"
 
-          KSU_API_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/$BRANCH_NAME/kernel/Kbuild" | \
-            grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]' || true)
+          echo "::group::🔢 Determine API version"
+          KSU_API_VERSION="$(
+            curl -fsSL "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/$BRANCH_NAME/kernel/Kbuild" | \
+              grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]' || true
+          )"
 
           if [[ -z "$KSU_API_VERSION" || "$(printf '%s\n' "$KSU_API_VERSION" "4.1.0" | sort -V | head -n1)" != "4.1.0" ]]; then
             KSU_API_VERSION="4.1.0"
           fi
-          echo "KSU_API_VERSION=$KSU_API_VERSION" >> $GITHUB_ENV
+          echo "KSU_API_VERSION=$KSU_API_VERSION" >> "$GITHUB_ENV"
+          echo "API version: $KSU_API_VERSION"
+          echo "::endgroup::"
 
-          GIT_HASH=$(git rev-parse --short HEAD)
-          KSU_COMMIT_SHA=$(git rev-parse HEAD)
-          echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> $GITHUB_ENV
+          echo "::group::📝 Capture commit info"
+          GIT_HASH="$(git rev-parse --short HEAD)"
+          KSU_COMMIT_SHA="$(git rev-parse HEAD)"
+          echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> "$GITHUB_ENV"
           echo "GIT_HASH=$GIT_HASH"
+          echo "::endgroup::"
 
-          if [[ -n "$MANUAL_HASH" ]]; then
+          if [[ -n "${MANUAL_HASH:-}" ]]; then
             USE_HASH="$SHORT_HASH"
           else
             USE_HASH="$GIT_HASH"
           fi
 
-          if [[ -z "$CUSTOM_TAG" ]]; then
+          if [[ -z "${CUSTOM_TAG:-}" ]]; then
             VERSION_FULL="v$KSU_API_VERSION-$USE_HASH@$BRANCH_NAME"
           else
             VERSION_FULL="v$KSU_API_VERSION-$CUSTOM_TAG@$BRANCH_NAME[$USE_HASH]"
           fi
 
-          sed -i '/define get_ksu_version_full/,/endef/d' kernel/Kbuild
-          sed -i '/KSU_VERSION_API :=/d' kernel/Kbuild
-          sed -i '/KSU_VERSION_FULL :=/d' kernel/Kbuild
+          echo "::group::📝 Update kernel/Kbuild"
+          KBUILD_PATH="kernel/Kbuild"
+          if [ ! -f "$KBUILD_PATH" ]; then
+            echo "::error::Expected Kbuild not found at $KBUILD_PATH"
+            exit 14
+          fi
 
-          VERSION_DEFINITIONS=$(cat <<EOF
-            define get_ksu_version_full
-            $VERSION_FULL
-            endef
+          cp "$KBUILD_PATH" "${KBUILD_PATH}.backup"
 
-            KSU_VERSION_API := $KSU_API_VERSION
-            KSU_VERSION_FULL := $VERSION_FULL
-          EOF
-          )
+          # Remove old definitions (if present)
+          sed -i '/define get_ksu_version_full/,/endef/d' "$KBUILD_PATH"
+          sed -i '/KSU_VERSION_API :=/d' "$KBUILD_PATH"
+          sed -i '/KSU_VERSION_FULL :=/d' "$KBUILD_PATH"
 
+          # Indentation-proof construction (no heredoc)
+          VERSION_DEFINITIONS="$(printf '%s\n' \
+          "define get_ksu_version_full" \
+          "${VERSION_FULL}" \
+          "endef" \
+          "KSU_VERSION_API := ${KSU_API_VERSION}" \
+          "KSU_VERSION_FULL := ${VERSION_FULL}"
+          )"
+
+          # Insert after REPO_OWNER if present, else append to end
           awk -v def="$VERSION_DEFINITIONS" '
             /REPO_OWNER :=/ {print; print def; inserted=1; next}
             1
             END {if (!inserted) print def}
-          ' kernel/Kbuild > kernel/Kbuild.tmp && mv kernel/Kbuild.tmp kernel/Kbuild
+          ' "$KBUILD_PATH" > "${KBUILD_PATH}.tmp" && mv "${KBUILD_PATH}.tmp" "$KBUILD_PATH"
 
-          KSU_VERSION=$(expr $(git rev-list --count main 2>/dev/null || echo 13000) + 37185)
-          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+          rm -f "${KBUILD_PATH}.backup"
+          echo "Kbuild updated with: $VERSION_FULL"
+          echo "::endgroup::"
+
+          echo "::group::🔢 Calculate KSU version number"
+          COMMIT_COUNT="$(git rev-list --count "$MANAGER_BRANCH" 2>/dev/null || echo 13000)"
+          KSU_VERSION="$(expr "$COMMIT_COUNT" + 37185)"
+          echo "KSUVER=$KSU_VERSION" >> "$GITHUB_ENV"
+          echo "KSUVER=$KSU_VERSION (commits: $COMMIT_COUNT + 37185)"
+          echo "::endgroup::"
 
           echo "::group::Final Kbuild version info"
-          grep -A10 "REPO_OWNER" kernel/Kbuild
-          grep "KSU_VERSION_FULL" kernel/Kbuild
+          # Non-fatal greps (important under bash -e)
+          if grep -q "REPO_OWNER :=" "$KBUILD_PATH"; then
+            grep -A10 "REPO_OWNER :=" "$KBUILD_PATH"
+          else
+            echo "REPO_OWNER not found in kernel/Kbuild (OK). Version block appended."
+          fi
+          grep "KSU_VERSION_FULL" "$KBUILD_PATH" || echo "KSU_VERSION_FULL not found"
           echo "::endgroup::"
 
       - name: Apply Patches (ReSukiSU)
