@@ -1,0 +1,325 @@
+name: Cleanup Cache & Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      CLEANUP_TYPE:
+        type: choice
+        description: "Type de nettoyage"
+        required: true
+        default: all
+        options:
+          - all          # Tout nettoyer
+          - ccache       # Seulement ccache
+          - artifacts    # Seulement les artefacts
+          - old-runs     # Anciennes exécutions
+
+      FILE_FILTER:
+        type: choice
+        description: "Filtre de configuration (pour ccache)"
+        required: false
+        default: all
+        options:
+          - all
+          - android16-6.12-2025-06
+
+      DAYS_OLD:
+        type: number
+        description: "Supprimer les éléments plus vieux que X jours"
+        required: false
+        default: 7
+
+      DRY_RUN:
+        type: boolean
+        description: "Mode simulation (ne supprime rien)"
+        required: true
+        default: true
+
+jobs:
+  cleanup:
+    name: 🧹 Cleanup ${{ github.event.inputs.CLEANUP_TYPE }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔍 Analyze Current Cache Usage
+        id: analyze
+        run: |
+          echo "::group::📊 Cache Analysis"
+          
+          # Simuler l'analyse des caches (GitHub ne permet pas de lister directement)
+          echo "Configuration cible: ${{ github.event.inputs.FILE_FILTER }}"
+          echo "Type de nettoyage: ${{ github.event.inputs.CLEANUP_TYPE }}"
+          echo "Ancienneté: ${{ github.event.inputs.DAYS_OLD }} jours"
+          echo "Mode simulation: ${{ github.event.inputs.DRY_RUN }}"
+          
+          # Calculer la date limite
+          CUTOFF_DATE=$(date -d "${{ github.event.inputs.DAYS_OLD }} days ago" +%Y-%m-%d)
+          echo "CUTOFF_DATE=$CUTOFF_DATE" >> $GITHUB_ENV
+          
+          echo "::endgroup::"
+
+      - name: 🗑️ Clean Ccache
+        if: ${{ github.event.inputs.CLEANUP_TYPE == 'all' || github.event.inputs.CLEANUP_TYPE == 'ccache' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const dryRun = ${{ github.event.inputs.DRY_RUN }};
+            const fileFilter = '${{ github.event.inputs.FILE_FILTER }}';
+            const daysOld = ${{ github.event.inputs.DAYS_OLD }};
+            
+            console.log('🧹 Nettoyage des caches ccache...');
+            console.log(`Mode: ${dryRun ? '🔍 SIMULATION' : '🗑️ SUPPRESSION RÉELLE'}`);
+            
+            try {
+              // Lister tous les caches
+              const caches = await github.rest.actions.getActionsCacheList({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+              
+              let deletedCount = 0;
+              let totalSize = 0;
+              const cutoffDate = new Date();
+              cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+              
+              for (const cache of caches.data.actions_caches) {
+                const cacheDate = new Date(cache.created_at);
+                const matchesFilter = fileFilter === 'all' || cache.key.includes(fileFilter);
+                const isOld = cacheDate < cutoffDate;
+                const isCcache = cache.key.includes('ccache');
+                
+                if (isCcache && matchesFilter && isOld) {
+                  console.log(`📦 Cache trouvé: ${cache.key}`);
+                  console.log(`   Taille: ${(cache.size_in_bytes / 1024 / 1024).toFixed(2)} MB`);
+                  console.log(`   Créé le: ${cache.created_at}`);
+                  console.log(`   Âge: ${Math.floor((Date.now() - cacheDate) / (1000 * 60 * 60 * 24))} jours`);
+                  
+                  totalSize += cache.size_in_bytes;
+                  
+                  if (!dryRun) {
+                    try {
+                      await github.rest.actions.deleteActionsCacheById({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        cache_id: cache.id
+                      });
+                      console.log(`   ✅ Supprimé`);
+                      deletedCount++;
+                    } catch (error) {
+                      console.log(`   ❌ Erreur: ${error.message}`);
+                    }
+                  } else {
+                    console.log(`   🔍 [SIMULATION] Serait supprimé`);
+                    deletedCount++;
+                  }
+                  console.log('');
+                }
+              }
+              
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.log(`📊 Résumé du nettoyage ccache:`);
+              console.log(`   Caches ${dryRun ? 'à supprimer' : 'supprimés'}: ${deletedCount}`);
+              console.log(`   Espace ${dryRun ? 'à libérer' : 'libéré'}: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              
+              core.setOutput('ccache_deleted', deletedCount);
+              core.setOutput('ccache_size', totalSize);
+              
+            } catch (error) {
+              console.error('❌ Erreur lors du nettoyage ccache:', error);
+              core.setFailed(error.message);
+            }
+
+      - name: 🗑️ Clean Build Artifacts
+        if: ${{ github.event.inputs.CLEANUP_TYPE == 'all' || github.event.inputs.CLEANUP_TYPE == 'artifacts' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const dryRun = ${{ github.event.inputs.DRY_RUN }};
+            const daysOld = ${{ github.event.inputs.DAYS_OLD }};
+            
+            console.log('🧹 Nettoyage des artefacts de build...');
+            console.log(`Mode: ${dryRun ? '🔍 SIMULATION' : '🗑️ SUPPRESSION RÉELLE'}`);
+            
+            try {
+              const artifacts = await github.rest.actions.listArtifactsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+              
+              let deletedCount = 0;
+              let totalSize = 0;
+              const cutoffDate = new Date();
+              cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+              
+              for (const artifact of artifacts.data.artifacts) {
+                const artifactDate = new Date(artifact.created_at);
+                const isOld = artifactDate < cutoffDate;
+                
+                if (isOld) {
+                  console.log(`📦 Artefact trouvé: ${artifact.name}`);
+                  console.log(`   Taille: ${(artifact.size_in_bytes / 1024 / 1024).toFixed(2)} MB`);
+                  console.log(`   Créé le: ${artifact.created_at}`);
+                  console.log(`   Âge: ${Math.floor((Date.now() - artifactDate) / (1000 * 60 * 60 * 24))} jours`);
+                  
+                  totalSize += artifact.size_in_bytes;
+                  
+                  if (!dryRun) {
+                    try {
+                      await github.rest.actions.deleteArtifact({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        artifact_id: artifact.id
+                      });
+                      console.log(`   ✅ Supprimé`);
+                      deletedCount++;
+                    } catch (error) {
+                      console.log(`   ❌ Erreur: ${error.message}`);
+                    }
+                  } else {
+                    console.log(`   🔍 [SIMULATION] Serait supprimé`);
+                    deletedCount++;
+                  }
+                  console.log('');
+                }
+              }
+              
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.log(`📊 Résumé du nettoyage des artefacts:`);
+              console.log(`   Artefacts ${dryRun ? 'à supprimer' : 'supprimés'}: ${deletedCount}`);
+              console.log(`   Espace ${dryRun ? 'à libérer' : 'libéré'}: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              
+              core.setOutput('artifacts_deleted', deletedCount);
+              core.setOutput('artifacts_size', totalSize);
+              
+            } catch (error) {
+              console.error('❌ Erreur lors du nettoyage des artefacts:', error);
+              core.setFailed(error.message);
+            }
+
+      - name: 🗑️ Clean Old Workflow Runs
+        if: ${{ github.event.inputs.CLEANUP_TYPE == 'all' || github.event.inputs.CLEANUP_TYPE == 'old-runs' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const dryRun = ${{ github.event.inputs.DRY_RUN }};
+            const daysOld = ${{ github.event.inputs.DAYS_OLD }};
+            
+            console.log('🧹 Nettoyage des anciennes exécutions de workflow...');
+            console.log(`Mode: ${dryRun ? '🔍 SIMULATION' : '🗑️ SUPPRESSION RÉELLE'}`);
+            
+            try {
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+                status: 'completed'
+              });
+              
+              let deletedCount = 0;
+              const cutoffDate = new Date();
+              cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+              
+              for (const run of runs.data.workflow_runs) {
+                const runDate = new Date(run.created_at);
+                const isOld = runDate < cutoffDate;
+                
+                // Ne pas supprimer le workflow actuel
+                if (isOld && run.id !== context.runId) {
+                  console.log(`🏃 Exécution trouvée: ${run.name} (#${run.run_number})`);
+                  console.log(`   Statut: ${run.conclusion}`);
+                  console.log(`   Créé le: ${run.created_at}`);
+                  console.log(`   Âge: ${Math.floor((Date.now() - runDate) / (1000 * 60 * 60 * 24))} jours`);
+                  
+                  if (!dryRun) {
+                    try {
+                      await github.rest.actions.deleteWorkflowRun({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        run_id: run.id
+                      });
+                      console.log(`   ✅ Supprimé`);
+                      deletedCount++;
+                    } catch (error) {
+                      console.log(`   ❌ Erreur: ${error.message}`);
+                    }
+                  } else {
+                    console.log(`   🔍 [SIMULATION] Serait supprimé`);
+                    deletedCount++;
+                  }
+                  console.log('');
+                }
+              }
+              
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.log(`📊 Résumé du nettoyage des exécutions:`);
+              console.log(`   Exécutions ${dryRun ? 'à supprimer' : 'supprimées'}: ${deletedCount}`);
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              
+              core.setOutput('runs_deleted', deletedCount);
+              
+            } catch (error) {
+              console.error('❌ Erreur lors du nettoyage des exécutions:', error);
+              core.setFailed(error.message);
+            }
+
+      - name: 📊 Cleanup Summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          # 🧹 Rapport de nettoyage
+
+          ## ⚙️ Configuration
+
+          | Paramètre | Valeur |
+          |-----------|--------|
+          | **Type de nettoyage** | ${{ github.event.inputs.CLEANUP_TYPE }} |
+          | **Filtre de configuration** | ${{ github.event.inputs.FILE_FILTER }} |
+          | **Ancienneté** | ${{ github.event.inputs.DAYS_OLD }} jours |
+          | **Mode** | ${{ github.event.inputs.DRY_RUN == 'true' && '🔍 Simulation' || '🗑️ Suppression réelle' }} |
+          | **Date limite** | ${{ env.CUTOFF_DATE }} |
+
+          ## 📊 Résultats
+
+          EOF
+
+          if [ "${{ github.event.inputs.CLEANUP_TYPE }}" == "all" ] || [ "${{ github.event.inputs.CLEANUP_TYPE }}" == "ccache" ]; then
+            cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 💾 Ccache
+          - Caches traités: Voir les logs ci-dessus
+          - Espace libéré: Voir les logs ci-dessus
+
+          EOF
+          fi
+
+          if [ "${{ github.event.inputs.CLEANUP_TYPE }}" == "all" ] || [ "${{ github.event.inputs.CLEANUP_TYPE }}" == "artifacts" ]; then
+            cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 📦 Artefacts
+          - Artefacts traités: Voir les logs ci-dessus
+          - Espace libéré: Voir les logs ci-dessus
+
+          EOF
+          fi
+
+          if [ "${{ github.event.inputs.CLEANUP_TYPE }}" == "all" ] || [ "${{ github.event.inputs.CLEANUP_TYPE }}" == "old-runs" ]; then
+            cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🏃 Exécutions de workflow
+          - Exécutions traitées: Voir les logs ci-dessus
+
+          EOF
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ---
+
+          ${{ github.event.inputs.DRY_RUN == 'true' && '⚠️ **Mode simulation activé** - Aucune suppression effectuée' || '✅ **Nettoyage terminé avec succès!**' }}
+          EOF
