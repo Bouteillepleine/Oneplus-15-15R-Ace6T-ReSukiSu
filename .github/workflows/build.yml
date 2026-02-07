@@ -234,34 +234,124 @@ jobs:
 
       - name: Initialize Repo and Sync
         env:
-          FILE: ${{ inputs.FILE }}
+          FILE: ${{ github.event.inputs.FILE }}
         run: |
           set -euo pipefail
+          
+          echo "::group::📦 Initializing Repo"
           mkdir -p kernel_workspace
           cd kernel_workspace
-
-          FORMATTED_BRANCH="${{ inputs.FILE }}"
-          repo init -u https://android.googlesource.com/kernel/manifest -b "common-${FORMATTED_BRANCH}" --depth=1 --no-clone-bundle --no-tags
-
+          
+          FORMATTED_BRANCH="${{ github.event.inputs.FILE }}"
+          echo "Target branch: ${FORMATTED_BRANCH}"
+          
+          # Check if branch exists upstream
+          echo "Checking if branch exists upstream..."
           REMOTE_BRANCH="$(git ls-remote https://android.googlesource.com/kernel/common "${FORMATTED_BRANCH}" || true)"
           if [ -z "$REMOTE_BRANCH" ]; then
             echo "::error::Branch not found upstream: ${FORMATTED_BRANCH}"
             exit 21
           fi
-
+          echo "✅ Branch found upstream"
+          
+          # Initialize repo
+          if ! repo init -u https://android.googlesource.com/kernel/manifest \
+               -b "common-${FORMATTED_BRANCH}" \
+               --depth=1 \
+               --no-clone-bundle \
+               --no-tags; then
+            echo "::error::Failed to initialize repo"
+            exit 22
+          fi
+          echo "✅ Repo initialized"
+          echo "::endgroup::"
+          
+          echo "::group::🔧 Adjusting Manifest for Deprecated Branches"
           DEFAULT_MANIFEST_PATH=".repo/manifests/default.xml"
           if grep -q "deprecated" <<< "$REMOTE_BRANCH"; then
+            echo "Branch is deprecated, updating manifest..."
             sed -i "s/\"${FORMATTED_BRANCH}\"/\"deprecated\/${FORMATTED_BRANCH}\"/g" "$DEFAULT_MANIFEST_PATH"
+            echo "✅ Manifest updated for deprecated branch"
+          else
+            echo "ℹ️ Branch is not deprecated, no manifest changes needed"
           fi
-
-          repo sync -c -j"$(nproc)" --no-clone-bundle --no-tags --force-sync
-
+          echo "::endgroup::"
+          
+          echo "::group::📥 Syncing Repository (Attempt 1)"
+          # First attempt with parallel jobs
+          if repo sync -c -j"$(nproc)" --no-clone-bundle --no-tags --force-sync; then
+            echo "✅ Sync completed successfully on first attempt"
+          else
+            SYNC_EXIT_CODE=$?
+            echo "::warning::First sync attempt failed with exit code: $SYNC_EXIT_CODE"
+            echo "::endgroup::"
+            
+            echo "::group::📥 Syncing Repository (Attempt 2 - Sequential)"
+            echo "Retrying with -j1 --fail-fast..."
+            if repo sync -c -j1 --fail-fast --no-clone-bundle --no-tags --force-sync; then
+              echo "✅ Sync completed successfully on second attempt"
+            else
+              SYNC_EXIT_CODE=$?
+              echo "::error::Second sync attempt failed with exit code: $SYNC_EXIT_CODE"
+              echo "::endgroup::"
+              
+              echo "::group::🔍 Diagnosing Sync Failure"
+              echo "Checking disk space..."
+              df -h
+              echo ""
+              echo "Checking .repo directory..."
+              du -sh .repo/* 2>/dev/null || true
+              echo ""
+              echo "Checking for problematic repos..."
+              if [ -d "prebuilts/clang/host/linux-x86" ]; then
+                echo "prebuilts/clang/host/linux-x86 exists, checking status..."
+                cd prebuilts/clang/host/linux-x86
+                git status || true
+                cd -
+              fi
+              echo "::endgroup::"
+              
+              echo "::group::📥 Syncing Repository (Attempt 3 - Force Clean)"
+              echo "Attempting force clean and retry..."
+              repo forall -c 'git reset --hard ; git clean -fdx' || true
+              
+              if repo sync -c -j1 --force-sync --no-clone-bundle --no-tags; then
+                echo "✅ Sync completed successfully on third attempt"
+              else
+                echo "::error::All sync attempts failed"
+                echo "::error::Please check GitHub Actions runner disk space and network connectivity"
+                exit 23
+              fi
+              echo "::endgroup::"
+            fi
+          fi
+          echo "::endgroup::"
+          
+          echo "::group::🧹 Cleaning Protected Exports"
           for dir in common; do
             if [ -e "$dir/BUILD.bazel" ]; then
+              echo "Removing protected_exports_list from $dir/BUILD.bazel..."
               sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' "$dir/BUILD.bazel"
             fi
-            rm -f "$dir/android/abi_gki_protected_exports_"* 2>/dev/null || echo "No protected exports in $dir"
+            
+            REMOVED_COUNT=$(rm -fv "$dir/android/abi_gki_protected_exports_"* 2>/dev/null | wc -l)
+            if [ "$REMOVED_COUNT" -gt 0 ]; then
+              echo "✅ Removed $REMOVED_COUNT protected export file(s) from $dir"
+            else
+              echo "ℹ️ No protected exports found in $dir"
+            fi
           done
+          echo "::endgroup::"
+          
+          echo "::group::📊 Sync Summary"
+          echo "=== Repository Status ==="
+          repo status || true
+          echo ""
+          echo "=== Disk Usage ==="
+          du -sh . 2>/dev/null || true
+          echo "::endgroup::"
+          
+          echo "::notice::✅ Repository sync completed successfully!"
 
       - name: Kernel Version Handling
         run: |
@@ -329,7 +419,7 @@ jobs:
             fi
           done
           if [ -z "$CPU_ARCH" ]; then
-            CPU_ARCH="sm8750"
+            CPU_ARCH="sm8850"
             echo "⚠️ CPU not detected, using default: $CPU_ARCH"
           else
             echo "✅ CPU detected: $CPU_ARCH"
