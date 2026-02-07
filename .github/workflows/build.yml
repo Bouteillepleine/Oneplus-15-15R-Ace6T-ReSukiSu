@@ -504,9 +504,9 @@ jobs:
 
           echo "::group::🔢 Calculate KSU version number"
           COMMIT_COUNT="$(git rev-list --count "$MANAGER_BRANCH" 2>/dev/null || echo 13000)"
-          KSU_VERSION="$(expr "$COMMIT_COUNT" + 37185)"
+          KSU_VERSION="$(expr "$COMMIT_COUNT" + 30700)"
           echo "KSUVER=$KSU_VERSION" >> "$GITHUB_ENV"
-          echo "KSUVER=$KSU_VERSION (commits: $COMMIT_COUNT + 37185)"
+          echo "KSUVER=$KSU_VERSION (commits: $COMMIT_COUNT + 30700)"
           echo "::endgroup::"
 
           echo "::group::Final Kbuild version info"
