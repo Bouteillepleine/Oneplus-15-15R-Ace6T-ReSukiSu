@@ -274,8 +274,8 @@ jobs:
             --no-clone-bundle \
             --no-tags \
             --force-sync \
-            --depth=1 \
             --current-branch
+
           echo "::endgroup::"
           
           echo "::group::🧹 Removing Protected Exports"
