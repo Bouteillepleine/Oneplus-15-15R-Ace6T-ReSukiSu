@@ -113,7 +113,6 @@ jobs:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
-      CCACHE_MAXSIZE: 8G
       BUILD_METHOD: "GKI"
       ANDROID_VERSION: "16"
 
@@ -129,12 +128,14 @@ jobs:
         if: ${{ github.event.inputs.SPACE_NOCLEAN == 'false' }}
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
+          root-reserve-mb: 4096
+          temp-reserve-mb: 1024
+          swap-size-mb: 4096
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
           remove-codeql: 'true'
+          remove-docker-images: 'true'
 
       - name: Debug Show Selected Inputs
         run: |
@@ -160,10 +161,10 @@ jobs:
       - name: Check Disk Space
         run: df -h
 
-      - name: Create and Enable 3G Swap
+      - name: Create and Enable Swap
         run: |
           sudo swapoff -a
-          sudo fallocate -l 3G /swapfile
+          sudo fallocate -l 4G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
@@ -173,8 +174,11 @@ jobs:
         if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' }}
         run: |
           echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=4G" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESS=true" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
           mkdir -p "$HOME/.ccache_${{ github.event.inputs.FILE }}"
-          echo "set: $HOME/.ccache_${{ github.event.inputs.FILE }}"
+          echo "✅ Ccache configured: 4GB with compression level 6"
 
       - name: Configure Git
         run: |
@@ -219,28 +223,113 @@ jobs:
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
 
+      - name: 🧹 Aggressive Pre-Build Cleanup
+        run: |
+          echo "::group::🧹 Pre-Build System Cleanup"
+          
+          # Nettoyer les logs système
+          sudo rm -rf /var/log/* 2>/dev/null || true
+          
+          # Nettoyer apt cache
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          
+          # Supprimer les kernels inutilisés
+          sudo apt-get autoremove --purge -y
+          
+          # Nettoyer Docker (si non supprimé)
+          docker system prune -af 2>/dev/null || true
+          
+          # Supprimer les fichiers temporaires
+          sudo rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+          
+          # Vider les caches utilisateur
+          rm -rf ~/.cache/* ~/.npm 2>/dev/null || true
+          
+          echo "=== Disk Space After Pre-Build Cleanup ==="
+          df -h /
+          echo "::endgroup::"
+
       - name: Initialize Repo and Sync
-        env:
-          FILE: ${{ github.event.inputs.FILE }}
         run: |
           mkdir kernel_workspace && cd kernel_workspace
           FORMATTED_BRANCH="${{ github.event.inputs.FILE }}"
-
-          repo init -u https://android.googlesource.com/kernel/manifest -b "common-${FORMATTED_BRANCH}" --depth=1 --no-clone-bundle --no-tags
+          
+          echo "::group::📥 Initializing Repo"
+          repo init -u https://android.googlesource.com/kernel/manifest \
+            -b "common-${FORMATTED_BRANCH}" \
+            --depth=1 \
+            --no-clone-bundle \
+            --no-tags
+          
           REMOTE_BRANCH=$(git ls-remote https://android.googlesource.com/kernel/common ${FORMATTED_BRANCH})
           DEFAULT_MANIFEST_PATH=.repo/manifests/default.xml
-          if grep -q deprecated <<< $REMOTE_BRANCH; then
+          if grep -q deprecated <<< "$REMOTE_BRANCH"; then
             sed -i "s/\"${FORMATTED_BRANCH}\"/\"deprecated\/${FORMATTED_BRANCH}\"/g" $DEFAULT_MANIFEST_PATH
           fi
-
-          repo sync -c -j$(nproc) --no-clone-bundle --no-tags --force-sync
-
+          echo "::endgroup::"
+          
+          echo "::group::📥 Syncing Sources (Shallow Clone)"
+          repo sync -c -j$(nproc) \
+            --no-clone-bundle \
+            --no-tags \
+            --force-sync \
+            --depth=1 \
+            --current-branch
+          echo "::endgroup::"
+          
+          echo "::group::🧹 Removing Protected Exports"
           for dir in common; do
             if [ -e "$dir/BUILD.bazel" ]; then
               sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' "$dir/BUILD.bazel"
             fi
             rm -f "$dir/android/abi_gki_protected_exports_"* 2>/dev/null || echo "No protected exports in $dir"
           done
+          echo "::endgroup::"
+
+      - name: 📊 Monitor Disk Space After Sync
+        run: |
+          echo "::group::💾 Post-Sync Disk Usage"
+          df -h /
+          echo ""
+          echo "=== Kernel Workspace Size ==="
+          du -sh kernel_workspace
+          echo ""
+          echo "=== Repo Objects Size ==="
+          du -sh kernel_workspace/.repo 2>/dev/null || echo "No .repo directory"
+          echo ""
+          echo "=== Available Space Check ==="
+          AVAILABLE=$(df / | tail -1 | awk '{print $4}')
+          AVAILABLE_GB=$((AVAILABLE / 1024 / 1024))
+          echo "Available: ${AVAILABLE_GB}GB"
+          if [ "$AVAILABLE_GB" -lt 25 ]; then
+            echo "::warning::Low disk space: ${AVAILABLE_GB}GB available (recommended: 30GB+)"
+          else
+            echo "✅ Sufficient disk space: ${AVAILABLE_GB}GB available"
+          fi
+          echo "::endgroup::"
+
+      - name: 🧹 Post-Sync Git Cleanup
+        run: |
+          cd kernel_workspace
+          echo "::group::🧹 Compressing Git Objects"
+          
+          # Supprimer les packs volumineux non nécessaires
+          echo "Removing large pack files..."
+          find .repo/project-objects -name "*.pack" -size +100M -delete 2>/dev/null || true
+          
+          # Nettoyer les logs git
+          echo "Cleaning git logs..."
+          find .repo/projects -name "*.git" -type d -exec rm -rf {}/logs \; 2>/dev/null || true
+          
+          # Compresser les objets git (aggressive)
+          echo "Compressing git objects (this may take a few minutes)..."
+          find .repo -name "*.git" -type d -exec git -C {} gc --aggressive --prune=now \; 2>/dev/null || true
+          
+          echo ""
+          echo "=== Disk Space After Git Cleanup ==="
+          df -h /
+          echo "::endgroup::"
 
       - name: Kernel Version Handling
         run: |
@@ -673,6 +762,8 @@ jobs:
             echo "CONFIG_NETFILTER_XT_SET=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP_SET=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP_SET_MAX=65534" >> "$CONFIG_FILE"
+            echo "CONFIG_NF_CONNTRACK_IPV6=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP6_NF_IPTABLES=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP_SET_BITMAP_IP=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP_SET_BITMAP_PORT=y" >> "$CONFIG_FILE"
@@ -698,7 +789,7 @@ jobs:
           fi
 
           sed -i 's/check_defconfig//' ./build.config.gki
-          echo "✅ Configuration completed with LTO Thin enabled"
+          echo "✅ Configuration completed"
 
       - name: Fix IPv6_NAT Error
         if: ${{ github.event.inputs.NETFILTER == 'true' }}
@@ -744,15 +835,46 @@ jobs:
           echo "🔧 Disabling module name protection for kernel 6.12"
           sed -i '0,/protected_module_names_list *= *":gki_aarch64_protected_module_names"/s//check_defconfig = "disabled"/' kernel_workspace/common/BUILD.bazel
 
+      - name: ⚠️ Pre-Build Space Check
+        run: |
+          AVAILABLE=$(df / | tail -1 | awk '{print $4}')
+          AVAILABLE_GB=$((AVAILABLE / 1024 / 1024))
+          REQUIRED_GB=20
+          
+          echo "::group::💾 Pre-Build Disk Space Verification"
+          echo "Available: ${AVAILABLE_GB}GB"
+          echo "Required: ${REQUIRED_GB}GB"
+          
+          if [ "$AVAILABLE_GB" -lt "$REQUIRED_GB" ]; then
+            echo "::error::Insufficient disk space: ${AVAILABLE_GB}GB available, ${REQUIRED_GB}GB required"
+            df -h /
+            exit 1
+          fi
+          
+          echo "✅ Sufficient disk space: ${AVAILABLE_GB}GB available"
+          echo "::endgroup::"
+
       - name: Build Kernel
         run: |
           cd kernel_workspace
           set -ex
+          
+          # Nettoyer automatiquement les fichiers intermédiaires pendant le build
+          trap 'echo "🧹 Cleaning intermediate files..."; rm -rf common/out/*/intermediates out/*/intermediates 2>/dev/null || true; df -h /' EXIT
+          
+          echo "::group::🔨 Building Kernel"
           if [ -f "build/build.sh" ]; then
             LTO=none BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh || exit 1
           else
             tools/bazel build --config=fast --lto=none //common:kernel_aarch64_dist || exit 1
           fi
+          echo "::endgroup::"
+          
+          echo "::group::🧹 Post-Build Cleanup"
+          rm -rf common/out/*/intermediates out/*/intermediates 2>/dev/null || true
+          echo "=== Disk Space After Build ==="
+          df -h /
+          echo "::endgroup::"
 
       - name: Make AnyKernel3
         run: |
@@ -928,7 +1050,7 @@ jobs:
           if [ "${{ github.event.inputs.BUILD_NOCCACHE }}" = "true" ]; then
             CCACHE_STATUS="❌ Disabled"
           else
-            CCACHE_STATUS="✅ Enabled"
+            CCACHE_STATUS="✅ Enabled (4GB compressed)"
           fi
 
           # Maintenant générer le rapport avec TOUTES les variables définies
@@ -1066,4 +1188,23 @@ jobs:
 
           echo ""
           echo "✨ Cleanup completed!"
+          echo "::endgroup::"
+
+      - name: 🆘 Emergency Cleanup (if build fails)
+        if: failure()
+        run: |
+          echo "::group::🆘 Emergency Disk Cleanup"
+          
+          echo "⚠️ Build failed, performing emergency cleanup..."
+          
+          # Supprimer TOUT sauf l'image finale
+          sudo rm -rf kernel_workspace/.repo 2>/dev/null || true
+          sudo rm -rf kernel_workspace/common/out/*/intermediates 2>/dev/null || true
+          sudo rm -rf kernel_workspace/out/*/intermediates 2>/dev/null || true
+          sudo rm -rf /var/log/* /tmp/* /var/tmp/* 2>/dev/null || true
+          sudo rm -rf ~/.cache/* 2>/dev/null || true
+          
+          echo ""
+          echo "=== Disk Space After Emergency Cleanup ==="
+          df -h /
           echo "::endgroup::"
