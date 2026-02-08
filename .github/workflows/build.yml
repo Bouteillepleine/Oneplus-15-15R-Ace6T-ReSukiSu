@@ -690,7 +690,7 @@ jobs:
           sed -i "s/KSU_VERSION_FALLBACK := 1/KSU_VERSION_FALLBACK := $KSU_VERSION/g" kernel/Kbuild
           sed -i "s/KSU_VERSION_TAG_FALLBACK := v0.0.1/KSU_VERSION_TAG_FALLBACK := $KSU_TAG/g" kernel/Kbuild
           echo "✅ Kbuild updated"
-
+          
       - name: Apply Patches (Common: SUSFS + helper repos)
         run: |
           set -euo pipefail
@@ -1130,7 +1130,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Define all variables
           KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-N/A}"
           KSUVER="${KSUVER:-N/A}"
           TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
@@ -1143,14 +1142,13 @@ jobs:
           IMAGE_SHA256="${IMAGE_SHA256:-N/A}"
           IMAGE_SIZE="${IMAGE_SIZE:-N/A}"
 
-          # SUSFS Status
           if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_ENABLED="✅ Enabled"
             SUSFS_VERSION="${SUSVER:-Latest upstream}"
-            SUSFS_BRANCH_NAME="${SUSFS_BRANCH_NAME:-gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}}"
+            SUSFS_BRANCH_NAME="${SUSFS_BRANCH_NAME:-gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}"
             SUSFS_COMMIT_SHA="${SUSFS_COMMIT_SHA:-Latest}"
             if [ "$SUSFS_COMMIT_SHA" != "Latest" ] && [ "$SUSFS_COMMIT_SHA" != "N/A" ]; then
-              SUSFS_COMMIT_LINK="[\\\`${SUSFS_COMMIT_SHA:0:8}\\\`](https://gitlab.com/simonpunk/susfs4ksu/-/commit/${SUSFS_COMMIT_SHA})"
+              SUSFS_COMMIT_LINK="[\`${SUSFS_COMMIT_SHA:0:8}\`](https://gitlab.com/simonpunk/susfs4ksu/-/commit/${SUSFS_COMMIT_SHA})"
             else
               SUSFS_COMMIT_LINK="Latest upstream"
             fi
@@ -1161,75 +1159,33 @@ jobs:
             SUSFS_COMMIT_LINK="N/A"
           fi
 
-          # KSU Commit Link
           KSU_REPO="${{ steps.manager.outputs.repo }}"
           if [ "$KSU_COMMIT_SHA" != "N/A" ] && [ -n "$KSU_COMMIT_SHA" ]; then
-            KSU_COMMIT_LINK="[\\\`${KSU_COMMIT_SHA:0:8}\\\`](https://github.com/${KSU_REPO}/commit/${KSU_COMMIT_SHA})"
+            KSU_COMMIT_LINK="[\`${KSU_COMMIT_SHA:0:8}\`](https://github.com/${KSU_REPO}/commit/${KSU_COMMIT_SHA})"
           else
             KSU_COMMIT_LINK="N/A"
           fi
 
-          # Features Status
-          if [ "${{ env.KPM_ENABLED }}" = "true" ]; then
-            KPM_STATUS="✅ Enabled"
-          else
-            KPM_STATUS="❌ Disabled"
-          fi
-          
-          if [ "${{ github.event.inputs.LSM }}" = "true" ]; then
-            LSM_STATUS="✅ Enabled"
-          else
-            LSM_STATUS="❌ Disabled"
-          fi
-          
-          if [ "${{ github.event.inputs.BBR_ECN }}" = "true" ]; then
-            BBR_ECN_STATUS="✅ Enabled"
-          else
-            BBR_ECN_STATUS="❌ Disabled"
-          fi
-          
-          if [ "${{ github.event.inputs.NETFILTER }}" = "true" ]; then
-            NETFILTER_STATUS="✅ Enabled (IPSET & IPv6 NAT)"
-          else
-            NETFILTER_STATUS="❌ Disabled"
-          fi
-          
-          if [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "true" ]; then
-            UNICODE_FIX_STATUS="✅ Enabled"
-          else
-            UNICODE_FIX_STATUS="❌ Disabled"
-          fi
-          
-          if [ "${{ github.event.inputs.SUSFS_DEV }}" = "true" ]; then
-            SUSFS_DEV_MODE="✅ Yes"
-          else
-            SUSFS_DEV_MODE="❌ No"
-          fi
-          
-          if [ "${{ github.event.inputs.BUILD_NOCCACHE }}" = "true" ]; then
-            CCACHE_STATUS="❌ Disabled"
-          else
-            CCACHE_STATUS="✅ Enabled (4GB compressed)"
-          fi
+          [ "${{ env.KPM_ENABLED }}" = "true" ] && KPM_STATUS="✅ Enabled" || KPM_STATUS="❌ Disabled"
+          [ "${{ github.event.inputs.LSM }}" = "true" ] && LSM_STATUS="✅ Enabled" || LSM_STATUS="❌ Disabled"
+          [ "${{ github.event.inputs.BBR_ECN }}" = "true" ] && BBR_ECN_STATUS="✅ Enabled" || BBR_ECN_STATUS="❌ Disabled"
+          [ "${{ github.event.inputs.NETFILTER }}" = "true" ] && NETFILTER_STATUS="✅ Enabled (IPSET & IPv6 NAT)" || NETFILTER_STATUS="❌ Disabled"
+          [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "true" ] && UNICODE_FIX_STATUS="✅ Enabled" || UNICODE_FIX_STATUS="❌ Disabled"
+          [ "${{ github.event.inputs.SUSFS_DEV }}" = "true" ] && SUSFS_DEV_MODE="✅ Yes" || SUSFS_DEV_MODE="❌ No"
+          [ "${{ github.event.inputs.BUILD_NOCCACHE }}" = "true" ] && CCACHE_STATUS="❌ Disabled" || CCACHE_STATUS="✅ Enabled (4GB compressed)"
 
-          # Generate Summary (using cat with proper escaping)
-          cat >> "$GITHUB_STEP_SUMMARY" << 'SUMMARY_EOF'
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           # 🎉 OnePlus 15 Kernel Build Complete
 
           ## 📱 Device Information
-
           | Property | Value |
           |----------|-------|
           | **Device** | OnePlus 15 |
-          SUMMARY_EOF
-
-          cat >> "$GITHUB_STEP_SUMMARY" << SUMMARY_EOF2
           | **Android Version** | ${KANDROID_VERSION} |
           | **Kernel Version** | ${TKERNEL_VERSION} |
           | **Configuration** | ${{ github.event.inputs.FILE }} |
 
           ## 🔧 Build Configuration
-
           | Component | Version/Setting |
           |-----------|----------------|
           | **KernelSU Source** | ${{ github.event.inputs.MANAGER_SOURCE }} |
@@ -1246,7 +1202,6 @@ jobs:
           | **Warnings** | ${WARNINGS_COUNT} |
 
           ## 📦 Build Output
-
           | File | Details |
           |------|---------|
           | **ZIP Name** | \`${ZIP_NAME}\` |
@@ -1256,24 +1211,14 @@ jobs:
           | **Image SHA256** | \`${IMAGE_SHA256}\` |
 
           ## ✨ Features Status
-
-          **Core Features:**
           - ✅ **KernelSU** (${{ github.event.inputs.MANAGER_SOURCE }})
-          - ${KPM_STATUS} **KPM** (Kernel Patch Manager)
+          - ${KPM_STATUS} **KPM**
           - ${SUSFS_ENABLED} **SUSFS**
-
-          **Network Optimizations:**
-          - ${BBR_ECN_STATUS} **BBR & ECN** (TCP Congestion Control)
+          - ${BBR_ECN_STATUS} **BBR & ECN**
           - ${NETFILTER_STATUS} **NETFILTER**
-
-          **Security & Fixes:**
-          - ${LSM_STATUS} **LSM** (Baseband Guard)
+          - ${LSM_STATUS} **LSM (Baseband Guard)**
           - ${UNICODE_FIX_STATUS} **Unicode Bypass Fix**
-
-          ---
-
-          **Build completed successfully!** 🚀
-          SUMMARY_EOF2
+          EOF
 
       - name: 📊 Post-build Disk Check
         if: always()
