@@ -1166,7 +1166,7 @@ jobs:
             KSU_COMMIT_LINK="N/A"
           fi
 
-                    if [ "${{ env.KPM_ENABLED }}" = "true" ]; then
+          if [ "${{ env.KPM_ENABLED }}" = "true" ]; then
             KPM_STATUS="✅ Enabled"
           else
             KPM_STATUS="❌ Disabled"
