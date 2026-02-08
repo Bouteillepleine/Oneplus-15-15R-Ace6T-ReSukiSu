@@ -691,7 +691,7 @@ jobs:
           sed -i "s/KSU_VERSION_TAG_FALLBACK := v0.0.1/KSU_VERSION_TAG_FALLBACK := $KSU_TAG/g" kernel/Kbuild
           echo "✅ Kbuild updated"
           
-      - name: Apply Patches (Common: SUSFS + helper repos)
+      - name: Apply Patches
         shell: bash
         run: |
           set -euo pipefail
@@ -733,7 +733,7 @@ jobs:
             echo "✅ SUSFS patch applied"
           fi
 
-      - name: KernelSU-only: enable SUSFS glue patch
+      - name: KernelSU-only
         if: ${{ github.event.inputs.MANAGER_SOURCE == 'KernelSU' && github.event.inputs.SUSFS_META != '-1' }}
         shell: bash
         run: |
