@@ -1130,6 +1130,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Define all variables
           KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-N/A}"
           KSUVER="${KSUVER:-N/A}"
           TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
@@ -1142,13 +1143,14 @@ jobs:
           IMAGE_SHA256="${IMAGE_SHA256:-N/A}"
           IMAGE_SIZE="${IMAGE_SIZE:-N/A}"
 
+          # SUSFS Status
           if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_ENABLED="✅ Enabled"
             SUSFS_VERSION="${SUSVER:-Latest upstream}"
             SUSFS_BRANCH_NAME="${SUSFS_BRANCH_NAME:-gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}}"
             SUSFS_COMMIT_SHA="${SUSFS_COMMIT_SHA:-Latest}"
             if [ "$SUSFS_COMMIT_SHA" != "Latest" ] && [ "$SUSFS_COMMIT_SHA" != "N/A" ]; then
-              SUSFS_COMMIT_LINK="[\`${SUSFS_COMMIT_SHA:0:8}\`](https://gitlab.com/simonpunk/susfs4ksu/-/commit/${SUSFS_COMMIT_SHA})"
+              SUSFS_COMMIT_LINK="[\\\`${SUSFS_COMMIT_SHA:0:8}\\\`](https://gitlab.com/simonpunk/susfs4ksu/-/commit/${SUSFS_COMMIT_SHA})"
             else
               SUSFS_COMMIT_LINK="Latest upstream"
             fi
@@ -1159,13 +1161,15 @@ jobs:
             SUSFS_COMMIT_LINK="N/A"
           fi
 
+          # KSU Commit Link
           KSU_REPO="${{ steps.manager.outputs.repo }}"
           if [ "$KSU_COMMIT_SHA" != "N/A" ] && [ -n "$KSU_COMMIT_SHA" ]; then
-            KSU_COMMIT_LINK="[\`${KSU_COMMIT_SHA:0:8}\`](https://github.com/${KSU_REPO}/commit/${KSU_COMMIT_SHA})"
+            KSU_COMMIT_LINK="[\\\`${KSU_COMMIT_SHA:0:8}\\\`](https://github.com/${KSU_REPO}/commit/${KSU_COMMIT_SHA})"
           else
             KSU_COMMIT_LINK="N/A"
           fi
 
+          # Features Status
           if [ "${{ env.KPM_ENABLED }}" = "true" ]; then
             KPM_STATUS="✅ Enabled"
           else
@@ -1208,7 +1212,8 @@ jobs:
             CCACHE_STATUS="✅ Enabled (4GB compressed)"
           fi
 
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          # Generate Summary (using cat with proper escaping)
+          cat >> "$GITHUB_STEP_SUMMARY" << 'SUMMARY_EOF'
           # 🎉 OnePlus 15 Kernel Build Complete
 
           ## 📱 Device Information
@@ -1216,6 +1221,9 @@ jobs:
           | Property | Value |
           |----------|-------|
           | **Device** | OnePlus 15 |
+          SUMMARY_EOF
+
+          cat >> "$GITHUB_STEP_SUMMARY" << SUMMARY_EOF2
           | **Android Version** | ${KANDROID_VERSION} |
           | **Kernel Version** | ${TKERNEL_VERSION} |
           | **Configuration** | ${{ github.event.inputs.FILE }} |
@@ -1265,7 +1273,7 @@ jobs:
           ---
 
           **Build completed successfully!** 🚀
-          EOF
+          SUMMARY_EOF2
 
       - name: 📊 Post-build Disk Check
         if: always()
