@@ -692,6 +692,7 @@ jobs:
           echo "✅ Kbuild updated"
           
       - name: Apply Patches (Common: SUSFS + helper repos)
+        shell: bash
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
@@ -726,7 +727,7 @@ jobs:
             cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" ./
             cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/"* ./fs/
             cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/"* ./include/linux/
-            
+
             echo "🔧 Applying SUSFS patch..."
             patch -p1 < "50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch"
             echo "✅ SUSFS patch applied"
