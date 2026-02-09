@@ -49,7 +49,7 @@ on:
         type: string
         description: "Branch name (required) / custom version tag (optional) / rollback commit hash (optional)"
         required: false
-        default: "main/⚡Ultra⚡/"
+        default: "builtin/⚡Ultra⚡/"
 
       SUFFIX:
         type: string
