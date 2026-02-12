@@ -306,7 +306,7 @@ jobs:
 
       - name: Restore Ccache
         if: ${{ !inputs.BUILD_NOCCACHE }}
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9  # v4.0.2
+        uses: actions/cache@v4  # Recommandé : utiliser le tag
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ inputs.FILE }}-aosp16
