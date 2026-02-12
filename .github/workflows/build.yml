@@ -1,15 +1,17 @@
-name: OnePlus 15 ReSukiSU
+name: OnePlus 15 / 15r / Ace6t ReSukiSU
 
 on:
   workflow_dispatch:
     inputs:
-      FILE:
+      DEVICE:
         type: choice
-        description: "Oneplus 15 kernel branch suffix (used as common-${FILE})"
+        description: "Target device"
         required: true
-        default: android16-6.12-2025-06
+        default: oneplus15
         options:
-          - android16-6.12-2025-06
+          - oneplus15      # OnePlus 15 (sm8850)
+          - oneplus15r     # OnePlus 15R (sm8845)
+          - ace6t          # OnePlus Ace 6T (sm8845)
 
       MANAGER_SOURCE:
         type: choice
@@ -112,13 +114,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: resukisu-${{ github.ref }}-${{ inputs.FILE }}
+  group: resukisu-${{ github.ref }}-${{ inputs.DEVICE }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: >-
-      ${{ inputs.KPM == 'KPM' && '[KPM] ' || inputs.KPM == 'KPN' && '[KPN] ' || '' }}${{ inputs.LSM && '[LSM] ' || '' }}For ${{ inputs.FILE }} ${{ inputs.SUFFIX }}
+      ${{ inputs.DEVICE == 'oneplus15' && 'OnePlus 15' || inputs.DEVICE == 'oneplus15r' && 'OnePlus 15R' || 'Ace 6T' }} 
+      ${{ inputs.KPM == 'KPM' && '[KPM] ' || inputs.KPM == 'KPN' && '[KPN] ' || '' }}${{ inputs.LSM && '[LSM]' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -127,7 +130,6 @@ jobs:
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
       CCACHE_MAXSIZE: 8G
-      CPU: "sm8850"
       LSM_ENABLED: ${{ inputs.LSM && '1' || '0' }}
       NETFILTER_ENABLED: ${{ inputs.NETFILTER && '1' || '0' }}
       BBR_ECN_ENABLED: ${{ inputs.BBR_ECN && '1' || '0' }}
@@ -140,6 +142,57 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+
+      - name: Set Device Configuration
+        id: device_config
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Device Configuration"
+          
+          case "${{ inputs.DEVICE }}" in
+            oneplus15)
+              echo "DEVICE_NAME=OnePlus 15" >> "$GITHUB_OUTPUT"
+              echo "DEVICE_CODENAME=pineapple" >> "$GITHUB_OUTPUT"
+              echo "CPU=sm8850" >> "$GITHUB_OUTPUT"
+              echo "KERNEL_BRANCH=android16-6.12-2025-06" >> "$GITHUB_OUTPUT"
+              echo "DEVICE_NAME_SAFE=OnePlus15" >> "$GITHUB_OUTPUT"
+              echo "✅ Device: OnePlus 15 (sm8850)"
+              echo "✅ Kernel: android16-6.12-2025-06"
+              ;;
+            oneplus15r)
+              echo "DEVICE_NAME=OnePlus 15R" >> "$GITHUB_OUTPUT"
+              echo "DEVICE_CODENAME=aston" >> "$GITHUB_OUTPUT"
+              echo "CPU=sm8845" >> "$GITHUB_OUTPUT"
+              echo "KERNEL_BRANCH=android16-6.12-2025-09" >> "$GITHUB_OUTPUT"
+              echo "DEVICE_NAME_SAFE=OnePlus15R" >> "$GITHUB_OUTPUT"
+              echo "✅ Device: OnePlus 15R (sm8845)"
+              echo "✅ Kernel: android16-6.12-2025-09"
+              ;;
+            ace6t)
+              echo "DEVICE_NAME=OnePlus Ace 6T" >> "$GITHUB_OUTPUT"
+              echo "DEVICE_CODENAME=pineapple" >> "$GITHUB_OUTPUT"
+              echo "CPU=sm8845" >> "$GITHUB_OUTPUT"
+              echo "KERNEL_BRANCH=android16-6.12-2025-09" >> "$GITHUB_OUTPUT"
+              echo "DEVICE_NAME_SAFE=Ace6T" >> "$GITHUB_OUTPUT"
+              echo "✅ Device: OnePlus Ace 6T (sm8845)"
+              echo "✅ Kernel: android16-6.12-2025-09"
+              ;;
+            *)
+              echo "❌ ERROR: Unknown device: ${{ inputs.DEVICE }}"
+              exit 1
+              ;;
+          esac
+          
+          echo "::endgroup::"
+
+      - name: Set Environment Variables
+        shell: bash
+        run: |
+          echo "CPU=${{ steps.device_config.outputs.CPU }}" >> "$GITHUB_ENV"
+          echo "KERNEL_BRANCH=${{ steps.device_config.outputs.KERNEL_BRANCH }}" >> "$GITHUB_ENV"
+          echo "DEVICE_NAME=${{ steps.device_config.outputs.DEVICE_NAME }}" >> "$GITHUB_ENV"
+          echo "DEVICE_NAME_SAFE=${{ steps.device_config.outputs.DEVICE_NAME_SAFE }}" >> "$GITHUB_ENV"
 
       - name: Record Build Start Time
         shell: bash
@@ -251,13 +304,16 @@ jobs:
           
           df -h
 
-      - name: Debug Show Selected Inputs
+      - name: Debug Show Selected Configuration
         shell: bash
         run: |
           echo "::group::Build Configuration"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📱 Device: OnePlus 15"
-          echo "🔧 Kernel Branch: ${{ inputs.FILE }}"
+          echo "📱 Device: ${{ steps.device_config.outputs.DEVICE_NAME }}"
+          echo "🔧 Codename: ${{ steps.device_config.outputs.DEVICE_CODENAME }}"
+          echo "💻 SoC: ${{ steps.device_config.outputs.CPU }}"
+          echo "🌿 Kernel Branch: ${{ steps.device_config.outputs.KERNEL_BRANCH }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "👤 Manager Source: ${{ inputs.MANAGER_SOURCE }}"
           echo "🔌 KPM Mode: ${{ inputs.KPM }}"
           echo "🔐 SUSFS Meta: ${{ inputs.SUSFS_META }}"
@@ -283,9 +339,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          echo "CCACHE_DIR=${GITHUB_WORKSPACE}/.ccache_${{ inputs.FILE }}" >> "$GITHUB_ENV"
-          mkdir -p "${GITHUB_WORKSPACE}/.ccache_${{ inputs.FILE }}"
-          echo "✅ Ccache directory: ${GITHUB_WORKSPACE}/.ccache_${{ inputs.FILE }}"
+          CACHE_KEY="${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}"
+          echo "CCACHE_DIR=${GITHUB_WORKSPACE}/.ccache_${CACHE_KEY}" >> "$GITHUB_ENV"
+          mkdir -p "${GITHUB_WORKSPACE}/.ccache_${CACHE_KEY}"
+          echo "✅ Ccache directory: ${GITHUB_WORKSPACE}/.ccache_${CACHE_KEY}"
 
       - name: Configure Git
         shell: bash
@@ -299,9 +356,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ inputs.FILE }}-aosp16
+          key: ccache-${{ runner.os }}-${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}
           restore-keys: |
-            ccache-${{ runner.os }}-${{ inputs.FILE }}-
+            ccache-${{ runner.os }}-${{ inputs.DEVICE }}-
             ccache-${{ runner.os }}-
 
       - name: Initialize Ccache
@@ -388,8 +445,9 @@ jobs:
           mkdir -p kernel_workspace
           cd kernel_workspace
 
-          BRANCH_SUFFIX="${{ inputs.FILE }}"
+          BRANCH_SUFFIX="${{ env.KERNEL_BRANCH }}"
           echo "📦 Initializing AOSP kernel manifest: common-${BRANCH_SUFFIX}"
+          echo "📱 Target device: ${{ steps.device_config.outputs.DEVICE_NAME }}"
 
           retry_command repo init -u https://android.googlesource.com/kernel/manifest \
             -b "common-${BRANCH_SUFFIX}" \
@@ -871,7 +929,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Modules Configuration
-        if: ${{ contains(inputs.FILE, 'android16-6.12') }}
+        if: ${{ contains(env.KERNEL_BRANCH, 'android16-6.12') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1028,7 +1086,7 @@ jobs:
           set -euo pipefail
           echo "::group::Creating AnyKernel3 ZIP"
 
-          ZIP_NAME="AnyKernel3_${{ inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_OnePlus15_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}.zip"
+          ZIP_NAME="AnyKernel3_${{ inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_${{ env.DEVICE_NAME_SAFE }}_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}.zip"
           echo "📦 Creating: $ZIP_NAME"
 
           rm -f AnyKernel3/*.zip
@@ -1172,7 +1230,7 @@ jobs:
           esac
 
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          # ${STATUS_COLOR} OnePlus 15 ReSukiSU Kernel Build ${STATUS_TEXT}
+          # ${STATUS_COLOR} ${{ env.DEVICE_NAME }} ReSukiSU Kernel Build ${STATUS_TEXT}
 
           ## ${STATUS_EMOJI} Build Status
 
@@ -1187,11 +1245,12 @@ jobs:
 
           | Property | Value |
           |----------|-------|
-          | **Device** | OnePlus 15 |
+          | **Device** | ${{ env.DEVICE_NAME }} |
+          | **Codename** | ${{ steps.device_config.outputs.DEVICE_CODENAME }} |
+          | **SoC** | ${{ env.CPU }} |
           | **Android Version** | ${KANDROID_VERSION} |
           | **Kernel Version** | ${TKERNEL_VERSION} |
-          | **Branch** | common-${{ inputs.FILE }} |
-          | **CPU Platform** | ${{ env.CPU }} |
+          | **Branch** | common-${{ env.KERNEL_BRANCH }} |
 
           ## 🔧 Build Configuration
 
@@ -1297,7 +1356,7 @@ jobs:
 
           cat > "$REPORT_FILE" <<EOF
           ═══════════════════════════════════════════════════════════════
-                    OnePlus 15 ReSukiSU Kernel Build Report
+                    ${{ env.DEVICE_NAME }} ReSukiSU Kernel Build Report
           ═══════════════════════════════════════════════════════════════
 
           Build Status: ${{ job.status }}
@@ -1308,11 +1367,12 @@ jobs:
           ───────────────────────────────────────────────────────────────
           Device Configuration
           ───────────────────────────────────────────────────────────────
-          Device: OnePlus 15
+          Device: ${{ env.DEVICE_NAME }}
+          Codename: ${{ steps.device_config.outputs.DEVICE_CODENAME }}
+          SoC: ${{ env.CPU }}
           Android Version: ${KANDROID_VERSION:-N/A}
           Kernel Version: ${TKERNEL_VERSION:-N/A}
-          Branch: common-${{ inputs.FILE }}
-          CPU Platform: ${{ env.CPU }}
+          Branch: common-${{ env.KERNEL_BRANCH }}
 
           ───────────────────────────────────────────────────────────────
           KSU Configuration
@@ -1385,7 +1445,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
         with:
-          name: build_report_${{ github.run_id }}
+          name: build_report_${{ inputs.DEVICE }}_${{ github.run_id }}
           path: build_report.txt
           retention-days: 30
           if-no-files-found: ignore
@@ -1394,7 +1454,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
         with:
-          name: build_log_${{ github.run_id }}
+          name: build_log_${{ inputs.DEVICE }}_${{ github.run_id }}
           path: kernel_workspace/build.log
           retention-days: 30
           if-no-files-found: warn
@@ -1451,7 +1511,7 @@ jobs:
 
             # Remove ccache if disabled
             if [ "${BUILD_NOCCACHE_ENABLED}" = "1" ]; then
-              safe_remove "${GITHUB_WORKSPACE}/.ccache_${{ inputs.FILE }}"
+              safe_remove "${GITHUB_WORKSPACE}/.ccache_${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}"
             fi
 
             echo "✅ Cleanup completed"
@@ -1497,6 +1557,7 @@ jobs:
             echo "✅ ═══════════════════════════════════════════════════════"
             echo "✅ BUILD SUCCESSFUL!"
             echo "✅ ═══════════════════════════════════════════════════════"
+            echo "✅ Device: ${{ env.DEVICE_NAME }}"
             echo "✅ Kernel: ${ZIP_NAME:-N/A}"
             echo "✅ Size: ${ZIP_SIZE:-N/A}"
             echo "✅ Duration: ${BUILD_TIME:-N/A}"
@@ -1507,6 +1568,7 @@ jobs:
             echo "❌ ═══════════════════════════════════════════════════════"
             echo "❌ BUILD FAILED!"
             echo "❌ ═══════════════════════════════════════════════════════"
+            echo "❌ Device: ${{ env.DEVICE_NAME }}"
             echo "❌ Check the logs above for error details"
             echo "❌ Common issues:"
             echo "❌   - Out of disk space"
@@ -1518,6 +1580,8 @@ jobs:
           else
             echo "⚠️  ═══════════════════════════════════════════════════════"
             echo "⚠️  BUILD CANCELLED"
+            echo "⚠️  ═══════════════════════════════════════════════════════"
+            echo "⚠️  Device: ${{ env.DEVICE_NAME }}"
             echo "⚠️  ═══════════════════════════════════════════════════════"
           fi
           echo "::endgroup::"
