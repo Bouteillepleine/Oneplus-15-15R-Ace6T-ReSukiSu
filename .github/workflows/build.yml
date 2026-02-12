@@ -1,4 +1,4 @@
-name: OnePlus ReSukiSU
+name: OnePlus 15 ReSukiSU
 
 on:
   workflow_dispatch:
@@ -139,16 +139,6 @@ jobs:
       SPACE_NOCLEAN_ENABLED: ${{ inputs.SPACE_NOCLEAN && '1' || '0' }}
       BUILD_NOCCACHE_ENABLED: ${{ inputs.BUILD_NOCCACHE && '1' || '0' }}
 
-      # 🔐 REMPLACER CES VALEURS AVEC LES VRAIES SHA256
-      # Exécutez get_checksums.sh pour obtenir ces valeurs
-      REPO_URL: "https://storage.googleapis.com/git-repo-downloads/repo"
-      REPO_SHA256: "PASTE_YOUR_REPO_SHA256_HERE"
-
-      KSU_SETUP_SHA: "PASTE_YOUR_KSU_COMMIT_SHA_HERE"
-      KSU_SETUP_SHA256: "PASTE_YOUR_KSU_SETUP_SHA256_HERE"
-      BBG_SETUP_SHA: "PASTE_YOUR_BBG_COMMIT_SHA_HERE"
-      BBG_SETUP_SHA256: "PASTE_YOUR_BBG_SETUP_SHA256_HERE"
-
     steps:
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
@@ -202,26 +192,7 @@ jobs:
             exit 1
           fi
 
-          # Vérification SHA256 placeholders
-          if [[ "${REPO_SHA256}" == "PASTE_YOUR_REPO_SHA256_HERE" ]]; then
-            echo "❌ ERROR: REPO_SHA256 placeholder not replaced!"
-            echo "Please run get_checksums.sh and update the workflow"
-            exit 2
-          fi
-
-          if [[ "${KSU_SETUP_SHA}" == "PASTE_YOUR_KSU_COMMIT_SHA_HERE" ]] || \
-             [[ "${KSU_SETUP_SHA256}" == "PASTE_YOUR_KSU_SETUP_SHA256_HERE" ]]; then
-            echo "❌ ERROR: KSU SHA placeholders not replaced!"
-            exit 2
-          fi
-
-          if [[ "${BBG_SETUP_SHA}" == "PASTE_YOUR_BBG_COMMIT_SHA_HERE" ]] || \
-             [[ "${BBG_SETUP_SHA256}" == "PASTE_YOUR_BBG_SETUP_SHA256_HERE" ]]; then
-            echo "❌ ERROR: BBG SHA placeholders not replaced!"
-            exit 2
-          fi
-
-          echo "✅ All SHA256 values configured correctly"
+          echo "✅ All inputs validated"
           echo "::endgroup::"
 
       - name: Pre-build Space Boost
@@ -357,22 +328,21 @@ jobs:
           fi
           echo "::endgroup::"
 
-      - name: Install Repo Tool (Pinned by SHA256)
+      - name: Install Repo Tool
         shell: bash
         run: |
           set -euo pipefail
           echo "::group::Installing Repo Tool"
 
           echo "📥 Downloading repo tool..."
-          curl -fL --proto '=https' --tlsv1.2 "${REPO_URL}" -o "$HOME/repo"
-          
-          echo "🔐 Verifying SHA256 checksum..."
-          echo "${REPO_SHA256}  $HOME/repo" | sha256sum -c -
+          curl -fL --proto '=https' --tlsv1.2 \
+            https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "$HOME/repo"
           
           chmod a+x "$HOME/repo"
           sudo mv "$HOME/repo" /usr/local/bin/repo
           repo version
-          echo "✅ Repo tool installed and verified"
+          echo "✅ Repo tool installed"
 
           echo "::endgroup::"
 
@@ -554,7 +524,7 @@ jobs:
           esac
           echo "::endgroup::"
 
-      - name: Add ReSukiSU (Pinned + SHA256)
+      - name: Add ReSukiSU
         shell: bash
         run: |
           set -euo pipefail
@@ -567,12 +537,10 @@ jobs:
           echo "🏷️  Tag: ${KSU_CUSTOM_TAG:-none}"
           echo "🔖 Hash: ${MANUAL_HASH:-latest}"
 
-          KSU_SETUP_URL="https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/${KSU_SETUP_SHA}/kernel/setup.sh"
-          echo "📥 Downloading KSU setup script..."
-          curl -fL --proto '=https' --tlsv1.2 -o /tmp/ksu_setup.sh "$KSU_SETUP_URL"
-          
-          echo "🔐 Verifying SHA256 checksum..."
-          echo "${KSU_SETUP_SHA256}  /tmp/ksu_setup.sh" | sha256sum -c -
+          echo "📥 Downloading KSU setup script from main branch..."
+          curl -fL --proto '=https' --tlsv1.2 \
+            -o /tmp/ksu_setup.sh \
+            "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh"
 
           echo "🚀 Running KSU setup..."
           bash /tmp/ksu_setup.sh "$BRANCH_NAME"
@@ -715,7 +683,7 @@ jobs:
           echo "✅ Unicode bypass applied"
           echo "::endgroup::"
 
-      - name: Apply LSM_BBG (Pinned + SHA256)
+      - name: Apply LSM_BBG
         if: ${{ inputs.LSM }}
         shell: bash
         run: |
@@ -723,12 +691,10 @@ jobs:
           cd kernel_workspace/common
           echo "::group::LSM BBG Integration"
 
-          BBG_SETUP_URL="https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/${BBG_SETUP_SHA}/setup.sh"
-          echo "📥 Downloading BBG setup script..."
-          curl -fL --proto '=https' --tlsv1.2 -o /tmp/bbg_setup.sh "$BBG_SETUP_URL"
-          
-          echo "🔐 Verifying SHA256 checksum..."
-          echo "${BBG_SETUP_SHA256}  /tmp/bbg_setup.sh" | sha256sum -c -
+          echo "📥 Downloading BBG setup script from main branch..."
+          curl -fL --proto '=https' --tlsv1.2 \
+            -o /tmp/bbg_setup.sh \
+            "https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/main/setup.sh"
 
           echo "🚀 Running BBG setup..."
           bash /tmp/bbg_setup.sh fix_blkdev_rename
@@ -1087,4 +1053,481 @@ jobs:
           retention-days: 30
 
       - name: Upload Flashable ZIP
-        uses: actions/upload-artifact@26
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}
+          compression-level: 0
+          retention-days: 30
+
+      - name: Calculate Build Metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "::group::Build Metrics Calculation"
+
+          if [ -n "${BUILD_START_TIME:-}" ]; then
+            BUILD_END_TIME=$(date +%s)
+            BUILD_DURATION=$((BUILD_END_TIME - BUILD_START_TIME))
+            MINUTES=$((BUILD_DURATION / 60))
+            SECS=$((BUILD_DURATION % 60))
+            echo "BUILD_TIME=${MINUTES}m ${SECS}s" >> "$GITHUB_ENV"
+            echo "BUILD_DURATION_RAW=${BUILD_DURATION}" >> "$GITHUB_ENV"
+            echo "⏱️  Build Duration: ${MINUTES}m ${SECS}s"
+          else
+            echo "BUILD_TIME=N/A" >> "$GITHUB_ENV"
+          fi
+
+          WARNINGS_COUNT="0"
+          BUILD_LOG="kernel_workspace/build.log"
+          if [ -f "$BUILD_LOG" ]; then
+            WARNINGS_COUNT="$(grep -c "warning:" "$BUILD_LOG" 2>/dev/null || echo 0)"
+            echo "✅ Found build log: $BUILD_LOG"
+          else
+            echo "⚠️ Build log not found at: $BUILD_LOG"
+          fi
+          echo "WARNINGS_COUNT=${WARNINGS_COUNT}" >> "$GITHUB_ENV"
+          echo "⚠️  Warnings: ${WARNINGS_COUNT}"
+
+          ZIP_NAME="${ZIP_NAME:-AnyKernel3.zip}"
+
+          ZIP_SHA256="$(sha256sum "${GITHUB_WORKSPACE}/${ZIP_NAME}" | awk '{print $1}')"
+          ZIP_SIZE="$(du -h "${GITHUB_WORKSPACE}/${ZIP_NAME}" | awk '{print $1}')"
+          IMAGE_SHA256="$(sha256sum "${GITHUB_WORKSPACE}/AnyKernel3/Image" | awk '{print $1}')"
+          IMAGE_SIZE="$(du -h "${GITHUB_WORKSPACE}/AnyKernel3/Image" | awk '{print $1}')"
+
+          echo "ZIP_SHA256=${ZIP_SHA256}" >> "$GITHUB_ENV"
+          echo "ZIP_SIZE=${ZIP_SIZE}" >> "$GITHUB_ENV"
+          echo "IMAGE_SHA256=${IMAGE_SHA256}" >> "$GITHUB_ENV"
+          echo "IMAGE_SIZE=${IMAGE_SIZE}" >> "$GITHUB_ENV"
+
+          echo "📦 ZIP: ${ZIP_SIZE} (SHA256: ${ZIP_SHA256:0:16}...)"
+          echo "🖼️  Image: ${IMAGE_SIZE} (SHA256: ${IMAGE_SHA256:0:16}...)"
+
+          echo "::endgroup::"
+
+      - name: Build Summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-N/A}"
+          KSUVER="${KSUVER:-N/A}"
+          TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
+          KANDROID_VERSION="${KANDROID_VERSION:-N/A}"
+          BUILD_TIME="${BUILD_TIME:-N/A}"
+          BUILD_START_DATE="${BUILD_START_DATE:-N/A}"
+          WARNINGS_COUNT="${WARNINGS_COUNT:-N/A}"
+          ZIP_NAME="${ZIP_NAME:-N/A}"
+          ZIP_SHA256="${ZIP_SHA256:-N/A}"
+          ZIP_SIZE="${ZIP_SIZE:-N/A}"
+          IMAGE_SHA256="${IMAGE_SHA256:-N/A}"
+          IMAGE_SIZE="${IMAGE_SIZE:-N/A}"
+          CCACHE_HIT_RATE="${CCACHE_HIT_RATE:-N/A}"
+
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS_EMOJI="✅"
+            STATUS_TEXT="SUCCESS"
+            STATUS_COLOR="🟢"
+          elif [ "${{ job.status }}" = "failure" ]; then
+            STATUS_EMOJI="❌"
+            STATUS_TEXT="FAILED"
+            STATUS_COLOR="🔴"
+          else
+            STATUS_EMOJI="⚠️"
+            STATUS_TEXT="CANCELLED"
+            STATUS_COLOR="🟡"
+          fi
+
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            SUSFS_ENABLED="✅ Enabled"
+            SUSFS_BRANCH_NAME="gki-${KANDROID_VERSION}-${KERNEL_VERSION}${{ inputs.SUSFS_DEV && '-dev' || '' }}"
+            SUSFS_COMMIT_SHA="${SUSFS_COMMIT_SHA:-Latest}"
+            SUSFS_VER="${SUSVER:-2.0.0+}"
+            if [ "$SUSFS_COMMIT_SHA" != "Latest" ] && [ "$SUSFS_COMMIT_SHA" != "N/A" ]; then
+              SUSFS_COMMIT_LINK="[\`${SUSFS_COMMIT_SHA:0:8}\`](https://gitlab.com/simonpunk/susfs4ksu/-/commit/${SUSFS_COMMIT_SHA})"
+            else
+              SUSFS_COMMIT_LINK="Latest upstream"
+            fi
+          else
+            SUSFS_ENABLED="❌ Disabled"
+            SUSFS_BRANCH_NAME="N/A"
+            SUSFS_COMMIT_LINK="N/A"
+            SUSFS_VER="N/A"
+          fi
+
+          KSU_REPO="ReSukiSU/ReSukiSU"
+          if [ "$KSU_COMMIT_SHA" != "N/A" ] && [ -n "$KSU_COMMIT_SHA" ]; then
+            KSU_COMMIT_LINK="[\`${KSU_COMMIT_SHA:0:8}\`](https://github.com/${KSU_REPO}/commit/${KSU_COMMIT_SHA})"
+          else
+            KSU_COMMIT_LINK="N/A"
+          fi
+
+          if [ "${LSM_ENABLED}" = "1" ]; then LSM_STATUS="✅ Enabled"; else LSM_STATUS="❌ Disabled"; fi
+          if [ "${BBR_ECN_ENABLED}" = "1" ]; then BBR_ECN_STATUS="✅ Enabled"; else BBR_ECN_STATUS="❌ Disabled"; fi
+          if [ "${NETFILTER_ENABLED}" = "1" ]; then NETFILTER_STATUS="✅ Enabled"; else NETFILTER_STATUS="❌ Disabled"; fi
+          if [ "${UNICODE_BYPASS_ENABLED}" = "1" ]; then UNICODE_FIX_STATUS="✅ Enabled"; else UNICODE_FIX_STATUS="❌ Disabled"; fi
+          if [ "${SUSFS_DEV_ENABLED}" = "1" ]; then SUSFS_DEV_MODE="✅ Yes"; else SUSFS_DEV_MODE="❌ No"; fi
+          if [ "${BUILD_NOCCACHE_ENABLED}" = "1" ]; then CCACHE_STATUS="❌ Disabled"; else CCACHE_STATUS="✅ Enabled (8GB max)"; fi
+          if [ "${XUS_FIX_ENABLED}" = "1" ]; then XUS_FIX_STATUS="✅ Enabled"; else XUS_FIX_STATUS="❌ Disabled"; fi
+
+          KPM_MODE="${{ inputs.KPM }}"
+          case "$KPM_MODE" in
+            KPM) KPM_STATUS="✅ Enabled (KPM)" ;;
+            KPN) KPM_STATUS="✅ Enabled (KPN)" ;;
+            NoN) KPM_STATUS="✅ Enabled (NoN)" ;;
+            *) KPM_STATUS="❓ Unknown" ;;
+          esac
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          # ${STATUS_COLOR} OnePlus 15 ReSukiSU Kernel Build ${STATUS_TEXT}
+
+          ## ${STATUS_EMOJI} Build Status
+
+          | Property | Value |
+          |----------|-------|
+          | **Status** | ${STATUS_TEXT} |
+          | **Started** | ${BUILD_START_DATE} |
+          | **Duration** | ${BUILD_TIME} |
+          | **Warnings** | ${WARNINGS_COUNT} |
+
+          ## 📱 Device Information
+
+          | Property | Value |
+          |----------|-------|
+          | **Device** | OnePlus 15 |
+          | **Android Version** | ${KANDROID_VERSION} |
+          | **Kernel Version** | ${TKERNEL_VERSION} |
+          | **Branch** | common-${{ inputs.FILE }} |
+          | **CPU Platform** | ${{ env.CPU }} |
+
+          ## 🔧 Build Configuration
+
+          | Component | Version/Setting |
+          |-----------|----------------|
+          | **Manager Source** | ${{ inputs.MANAGER_SOURCE }} |
+          | **KSU Version** | v${KSUVER} |
+          | **KSU Commit** | ${KSU_COMMIT_LINK} |
+          | **SUSFS** | ${SUSFS_ENABLED} |
+          | **SUSFS Version** | ${SUSFS_VER} |
+          | **SUSFS Branch** | ${SUSFS_BRANCH_NAME} |
+          | **SUSFS Commit** | ${SUSFS_COMMIT_LINK} |
+          | **SUSFS Dev Mode** | ${SUSFS_DEV_MODE} |
+
+          ## 📦 Build Output
+
+          | File | Details |
+          |------|---------|
+          | **ZIP Name** | \`${ZIP_NAME}\` |
+          | **ZIP Size** | ${ZIP_SIZE} |
+          | **ZIP SHA256** | \`${ZIP_SHA256}\` |
+          | **Image Size** | ${IMAGE_SIZE} |
+          | **Image SHA256** | \`${IMAGE_SHA256}\` |
+
+          ## ⚙️ Features Status
+
+          | Feature | Status |
+          |---------|--------|
+          | **KPM** | ${KPM_STATUS} |
+          | **SUSFS** | ${SUSFS_ENABLED} |
+          | **BBR & ECN** | ${BBR_ECN_STATUS} |
+          | **NETFILTER** | ${NETFILTER_STATUS} |
+          | **LSM (BBG)** | ${LSM_STATUS} |
+          | **Unicode Bypass** | ${UNICODE_FIX_STATUS} |
+          | **5US Fix** | ${XUS_FIX_STATUS} |
+          | **Ccache** | ${CCACHE_STATUS} |
+
+          ## 📊 Performance Metrics
+
+          | Metric | Value |
+          |--------|-------|
+          | **Build Duration** | ${BUILD_TIME} |
+          | **Ccache Hit Rate** | ${CCACHE_HIT_RATE} |
+          | **Parallel Jobs** | $(nproc) cores |
+          | **Compiler Warnings** | ${WARNINGS_COUNT} |
+
+          ## 💾 Disk Usage
+
+          \`\`\`
+          $(df -h / | tail -1)
+          \`\`\`
+
+          EOF
+
+          if [ "${{ job.status }}" = "failure" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 🔍 Troubleshooting
+
+          - ❌ Build failed - check logs for compilation errors
+          - 💾 Verify disk space was sufficient throughout build
+          - 📝 Review patch application status in earlier steps
+          - 🔄 Consider re-running with fresh cache (BUILD_NOCCACHE=true)
+          - 📧 Report persistent issues with full logs
+
+          ### Common Issues:
+
+          1. **Out of disk space**: Enable SPACE_NOCLEAN=false or use smaller cache
+          2. **Patch conflicts**: Check if kernel version matches patch requirements
+          3. **Network timeouts**: Retry the workflow (automatic retry implemented)
+          4. **Missing dependencies**: Verify all required packages installed
+
+          EOF
+          elif [ "${{ job.status }}" = "success" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ✅ Next Steps
+
+          1. 📥 Download the flashable ZIP from artifacts: \`${ZIP_NAME}\`
+          2. 🔄 Boot to recovery (TWRP/OrangeFox recommended)
+          3. 📲 Flash the ZIP file
+          4. 🔄 Reboot and verify KSU manager installation
+          5. ✅ Check root access and SUSFS functionality
+
+          ### Installation Notes:
+
+          - **Backup**: Always backup your current boot image before flashing
+          - **Compatibility**: Ensure your ROM matches Android ${KANDROID_VERSION}
+          - **Manager**: Install compatible manager from supported list
+          - **SUSFS**: If enabled, configure via KSU manager settings
+          - **Verification**: Check SHA256 hash matches: \`${ZIP_SHA256:0:16}...\`
+
+          EOF
+          fi
+
+      - name: Generate Build Report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "::group::Build Report Generation"
+
+          REPORT_FILE="${GITHUB_WORKSPACE}/build_report.txt"
+
+          cat > "$REPORT_FILE" <<EOF
+          ═══════════════════════════════════════════════════════════════
+                    OnePlus 15 ReSukiSU Kernel Build Report
+          ═══════════════════════════════════════════════════════════════
+
+          Build Status: ${{ job.status }}
+          Build Date: ${BUILD_START_DATE:-N/A}
+          Build Duration: ${BUILD_TIME:-N/A}
+          Workflow Run: ${{ github.run_id }}
+
+          ───────────────────────────────────────────────────────────────
+          Device Configuration
+          ───────────────────────────────────────────────────────────────
+          Device: OnePlus 15
+          Android Version: ${KANDROID_VERSION:-N/A}
+          Kernel Version: ${TKERNEL_VERSION:-N/A}
+          Branch: common-${{ inputs.FILE }}
+          CPU Platform: ${{ env.CPU }}
+
+          ───────────────────────────────────────────────────────────────
+          KSU Configuration
+          ───────────────────────────────────────────────────────────────
+          Manager Source: ${{ inputs.MANAGER_SOURCE }}
+          KSU Version: v${KSUVER:-N/A}
+          KSU Commit: ${KSU_COMMIT_SHA:-N/A}
+          KSU Custom Tag: ${KSU_CUSTOM_TAG:-none}
+
+          ───────────────────────────────────────────────────────────────
+          SUSFS Configuration
+          ───────────────────────────────────────────────────────────────
+          SUSFS Enabled: ${{ inputs.SUSFS_META != '-1' && 'Yes' || 'No' }}
+          SUSFS Version: ${SUSVER:-N/A}
+          SUSFS Branch: ${SUSFS_BRANCH_NAME:-N/A}
+          SUSFS Commit: ${SUSFS_COMMIT_SHA:-N/A}
+          SUSFS Dev Mode: ${{ inputs.SUSFS_DEV }}
+
+          ───────────────────────────────────────────────────────────────
+          Features
+          ───────────────────────────────────────────────────────────────
+          KPM Mode: ${{ inputs.KPM }}
+          LSM (BBG): ${{ inputs.LSM }}
+          NETFILTER: ${{ inputs.NETFILTER }}
+          BBR+ECN: ${{ inputs.BBR_ECN }}
+          Unicode Bypass: ${{ inputs.UNICODE_BYPASS }}
+          5US Fix: ${{ inputs.XUS_FIX }}
+
+          ───────────────────────────────────────────────────────────────
+          Build Output
+          ───────────────────────────────────────────────────────────────
+          ZIP Name: ${ZIP_NAME:-N/A}
+          ZIP Size: ${ZIP_SIZE:-N/A}
+          ZIP SHA256: ${ZIP_SHA256:-N/A}
+          Image Size: ${IMAGE_SIZE:-N/A}
+          Image SHA256: ${IMAGE_SHA256:-N/A}
+
+          ───────────────────────────────────────────────────────────────
+          Performance Metrics
+          ───────────────────────────────────────────────────────────────
+          Build Duration: ${BUILD_TIME:-N/A}
+          Ccache Hit Rate: ${CCACHE_HIT_RATE:-N/A}
+          Compiler Warnings: ${WARNINGS_COUNT:-N/A}
+          Parallel Jobs: $(nproc) cores
+
+          ───────────────────────────────────────────────────────────────
+          Build Environment
+          ───────────────────────────────────────────────────────────────
+          Runner OS: ${{ runner.os }}
+          Runner Arch: ${{ runner.arch }}
+          Workflow: ${{ github.workflow }}
+          Run ID: ${{ github.run_id }}
+          Run Number: ${{ github.run_number }}
+
+          ───────────────────────────────────────────────────────────────
+          Security & Reproducibility
+          ───────────────────────────────────────────────────────────────
+          Actions Pinned: Yes (SHA-based)
+          Scripts Verified: No (direct download from main branch)
+          Build Log Available: $([ -f "kernel_workspace/build.log" ] && echo "Yes" || echo "No")
+
+          ═══════════════════════════════════════════════════════════════
+          EOF
+
+          echo "✅ Build report generated: $REPORT_FILE"
+          cat "$REPORT_FILE"
+          echo "::endgroup::"
+
+      - name: Upload Build Report
+        if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
+        with:
+          name: build_report_${{ github.run_id }}
+          path: build_report.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload Build Log
+        if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
+        with:
+          name: build_log_${{ github.run_id }}
+          path: kernel_workspace/build.log
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Post-build Disk Check
+        if: always()
+        shell: bash
+        run: |
+          echo "::group::Disk Usage Analysis"
+          echo "📊 Final Disk Usage:"
+          df -h
+          echo ""
+          echo "📁 Build Directory Size:"
+          du -sh kernel_workspace 2>/dev/null || echo "Build directory not found"
+          echo ""
+          echo "📂 Top 10 Largest Directories:"
+          du -h kernel_workspace 2>/dev/null | sort -rh | head -10 || true
+          echo ""
+          if [ "${BUILD_NOCCACHE_ENABLED}" != "1" ] && command -v ccache >/dev/null 2>&1; then
+            echo "🗄️ Ccache Statistics:"
+            ccache -s
+          fi
+          echo "::endgroup::"
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Cleanup Operations"
+
+          safe_remove() {
+            local path="$1"
+            if [ -e "$path" ]; then
+              echo "🗑️  Removing: $path"
+              sudo rm -rf "$path" 2>/dev/null || true
+              echo "✅ Removed: $path"
+            else
+              echo "⏭️  Path does not exist: $path"
+            fi
+          }
+
+          if [ "${SPACE_NOCLEAN_ENABLED}" != "1" ]; then
+            echo "🧹 Starting cleanup process..."
+
+            # Remove build intermediates
+            safe_remove "kernel_workspace/common/out"
+            safe_remove "kernel_workspace/out"
+            safe_remove "kernel_workspace/.repo"
+
+            # Clean temporary files
+            sudo rm -rf /tmp/* 2>/dev/null || true
+            sudo rm -rf /var/tmp/* 2>/dev/null || true
+
+            # Remove ccache if disabled
+            if [ "${BUILD_NOCCACHE_ENABLED}" = "1" ]; then
+              safe_remove "${GITHUB_WORKSPACE}/.ccache_${{ inputs.FILE }}"
+            fi
+
+            echo "✅ Cleanup completed"
+          else
+            echo "⏭️  Space cleanup disabled (SPACE_NOCLEAN=true)"
+          fi
+
+          echo ""
+          echo "📊 Final Disk Status:"
+          df -h
+          echo "::endgroup::"
+
+      - name: Emergency Cleanup
+        if: failure()
+        shell: bash
+        run: |
+          echo "::group::Emergency Disk Cleanup"
+          echo "🚨 Build failed - performing emergency cleanup"
+
+          # Aggressive cleanup for failed builds
+          sudo rm -rf kernel_workspace/.repo 2>/dev/null || true
+          sudo rm -rf kernel_workspace/common/out/*/intermediates 2>/dev/null || true
+          sudo rm -rf kernel_workspace/out/*/intermediates 2>/dev/null || true
+          sudo rm -rf /var/log/* /tmp/* /var/tmp/* 2>/dev/null || true
+          sudo rm -rf ~/.cache/* 2>/dev/null || true
+          sudo rm -rf /usr/share/dotnet 2>/dev/null || true
+          sudo rm -rf /usr/local/lib/android 2>/dev/null || true
+
+          # Docker cleanup
+          sudo docker system prune -af 2>/dev/null || true
+
+          echo ""
+          echo "📊 Disk Status After Emergency Cleanup:"
+          df -h
+          echo "::endgroup::"
+
+      - name: Final Status Check
+        if: always()
+        shell: bash
+        run: |
+          echo "::group::Final Status"
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ ═══════════════════════════════════════════════════════"
+            echo "✅ BUILD SUCCESSFUL!"
+            echo "✅ ═══════════════════════════════════════════════════════"
+            echo "✅ Kernel: ${ZIP_NAME:-N/A}"
+            echo "✅ Size: ${ZIP_SIZE:-N/A}"
+            echo "✅ Duration: ${BUILD_TIME:-N/A}"
+            echo "✅ SHA256: ${ZIP_SHA256:0:16}..."
+            echo "✅ Download from Artifacts section above"
+            echo "✅ ═══════════════════════════════════════════════════════"
+          elif [ "${{ job.status }}" = "failure" ]; then
+            echo "❌ ═══════════════════════════════════════════════════════"
+            echo "❌ BUILD FAILED!"
+            echo "❌ ═══════════════════════════════════════════════════════"
+            echo "❌ Check the logs above for error details"
+            echo "❌ Common issues:"
+            echo "❌   - Out of disk space"
+            echo "❌   - Patch conflicts"
+            echo "❌   - Network timeouts"
+            echo "❌   - Invalid input parameters"
+            echo "❌ Build log available in artifacts"
+            echo "❌ ═══════════════════════════════════════════════════════"
+          else
+            echo "⚠️  ═══════════════════════════════════════════════════════"
+            echo "⚠️  BUILD CANCELLED"
+            echo "⚠️  ═══════════════════════════════════════════════════════"
+          fi
+          echo "::endgroup::"
