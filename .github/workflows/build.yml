@@ -128,8 +128,6 @@ jobs:
       CCACHE_HARDLINK: "true"
       CCACHE_MAXSIZE: 8G
       CPU: "sm8850"
-
-      # Booléens robustes côté bash
       LSM_ENABLED: ${{ inputs.LSM && '1' || '0' }}
       NETFILTER_ENABLED: ${{ inputs.NETFILTER && '1' || '0' }}
       BBR_ECN_ENABLED: ${{ inputs.BBR_ECN && '1' || '0' }}
@@ -1043,14 +1041,6 @@ jobs:
           ls -lh "${GITHUB_WORKSPACE}/${ZIP_NAME}"
 
           echo "::endgroup::"
-
-      - name: Upload AnyKernel3 Directory
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
-        with:
-          name: AnyKernel3_${{ inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_OnePlus15_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}
-          path: AnyKernel3/
-          compression-level: 9
-          retention-days: 30
 
       - name: Upload Flashable ZIP
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
