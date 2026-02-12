@@ -570,10 +570,30 @@ jobs:
             echo "CONFIG_KSU_SUSFS=n" >> "$CONFIG_FILE"
           fi
 
+          echo "CONFIG_TMPFS_XATTR=y" >> "$CONFIG_FILE"
+          echo "CONFIG_TMPFS_POSIX_ACL=y" >> "$CONFIG_FILE"
+
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> "$CONFIG_FILE"
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=n" >> "$CONFIG_FILE"
+          echo "CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_OPTIMIZE_INLINING=y" >> "$CONFIG_FILE"
+
+          echo "CONFIG_DEBUG_KERNEL=n" >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_INFO=n" >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_INFO_DWARF4=n" >> "$CONFIG_FILE"
+          echo "CONFIG_LOCK_DEBUGGING=n" >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_MUTEXES=n" >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_SPINLOCK=n" >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_ATOMIC_SLEEP=n" >> "$CONFIG_FILE"
+          echo "CONFIG_GDB_SCRIPTS=n" >> "$CONFIG_FILE"
+
           if [ "${{ github.event.inputs.BBR_ECN }}" = "true" ]; then
             echo "CONFIG_TCP_CONG_ADVANCED=y" >> "$CONFIG_FILE"
             echo "CONFIG_TCP_CONG_BBR=y" >> "$CONFIG_FILE"
             echo "CONFIG_NET_SCH_FQ=y" >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_CONG_BIC=n" >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_CONG_WESTWOOD=n" >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_CONG_HTCP=n" >> "$CONFIG_FILE"
             echo "CONFIG_IP_ECN=y" >> "$CONFIG_FILE"
             echo "CONFIG_TCP_ECN=y" >> "$CONFIG_FILE"
             echo "CONFIG_IPV6_ECN=y" >> "$CONFIG_FILE"
@@ -581,8 +601,27 @@ jobs:
           fi
 
           if [[ "${CPU}" == sm* && "${{ github.event.inputs.NETFILTER }}" == "true" ]]; then
+            echo "CONFIG_BPF_STREAM_PARSER=y" >> "$CONFIG_FILE"
+            echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$CONFIG_FILE"
+            echo "CONFIG_NETFILTER_XT_SET=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP_SET=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP_SET_MAX=65534" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_BITMAP_IP=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_BITMAP_PORT=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IP=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPMARK=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPPORT=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPPORTIP=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPPORTNET=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPMAC=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_MAC=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NETPORTNET=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NET=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NETNET=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NETPORT=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NETIFACE=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_LIST_SET=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP6_NF_NAT=y" >> "$CONFIG_FILE"
             echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y" >> "$CONFIG_FILE"
           fi
