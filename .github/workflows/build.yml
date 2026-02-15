@@ -111,7 +111,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: resukisu-${{ github.ref }}-${{ inputs.DEVICE }}
@@ -1100,13 +1100,14 @@ jobs:
 
           echo "::endgroup::"
 
-      - name: Upload Flashable ZIP
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
+      - name: Upload AK3 ZIP to GitHub Release (single file)
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ env.ZIP_NAME }}
-          path: ${{ env.ZIP_NAME }}
-          compression-level: 0
-          retention-days: 30
+          tag_name: ak3-${{ github.run_id }}
+          name: AK3 build ${{ github.run_id }}
+          files: ${{ env.ZIP_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Calculate Build Metrics
         shell: bash
@@ -1160,7 +1161,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
+      
           KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-N/A}"
           KSUVER="${KSUVER:-N/A}"
           TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
@@ -1174,7 +1175,7 @@ jobs:
           IMAGE_SHA256="${IMAGE_SHA256:-N/A}"
           IMAGE_SIZE="${IMAGE_SIZE:-N/A}"
           CCACHE_HIT_RATE="${CCACHE_HIT_RATE:-N/A}"
-
+      
           if [ "${{ job.status }}" = "success" ]; then
             STATUS_EMOJI="✅"
             STATUS_TEXT="SUCCESS"
@@ -1188,7 +1189,7 @@ jobs:
             STATUS_TEXT="CANCELLED"
             STATUS_COLOR="🟡"
           fi
-
+      
           if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_ENABLED="✅ Enabled"
             SUSFS_BRANCH_NAME="gki-${KANDROID_VERSION}-${KERNEL_VERSION}${{ inputs.SUSFS_DEV && '-dev' || '' }}"
@@ -1205,14 +1206,14 @@ jobs:
             SUSFS_COMMIT_LINK="N/A"
             SUSFS_VER="N/A"
           fi
-
+      
           KSU_REPO="ReSukiSU/ReSukiSU"
           if [ "$KSU_COMMIT_SHA" != "N/A" ] && [ -n "$KSU_COMMIT_SHA" ]; then
             KSU_COMMIT_LINK="[\`${KSU_COMMIT_SHA:0:8}\`](https://github.com/${KSU_REPO}/commit/${KSU_COMMIT_SHA})"
           else
             KSU_COMMIT_LINK="N/A"
           fi
-
+      
           if [ "${LSM_ENABLED}" = "1" ]; then LSM_STATUS="✅ Enabled"; else LSM_STATUS="❌ Disabled"; fi
           if [ "${BBR_ECN_ENABLED}" = "1" ]; then BBR_ECN_STATUS="✅ Enabled"; else BBR_ECN_STATUS="❌ Disabled"; fi
           if [ "${NETFILTER_ENABLED}" = "1" ]; then NETFILTER_STATUS="✅ Enabled"; else NETFILTER_STATUS="❌ Disabled"; fi
@@ -1220,7 +1221,7 @@ jobs:
           if [ "${SUSFS_DEV_ENABLED}" = "1" ]; then SUSFS_DEV_MODE="✅ Yes"; else SUSFS_DEV_MODE="❌ No"; fi
           if [ "${BUILD_NOCCACHE_ENABLED}" = "1" ]; then CCACHE_STATUS="❌ Disabled"; else CCACHE_STATUS="✅ Enabled (8GB max)"; fi
           if [ "${XUS_FIX_ENABLED}" = "1" ]; then XUS_FIX_STATUS="✅ Enabled"; else XUS_FIX_STATUS="❌ Disabled"; fi
-
+      
           KPM_MODE="${{ inputs.KPM }}"
           case "$KPM_MODE" in
             KPM) KPM_STATUS="✅ Enabled (KPM)" ;;
@@ -1228,21 +1229,24 @@ jobs:
             NoN) KPM_STATUS="✅ Enabled (NoN)" ;;
             *) KPM_STATUS="❓ Unknown" ;;
           esac
-
+      
+          RELEASE_TAG="ak3-${{ github.run_id }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
+      
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           # ${STATUS_COLOR} ${{ env.DEVICE_NAME }} ReSukiSU Kernel Build ${STATUS_TEXT}
-
+      
           ## ${STATUS_EMOJI} Build Status
-
+      
           | Property | Value |
           |----------|-------|
           | **Status** | ${STATUS_TEXT} |
           | **Started** | ${BUILD_START_DATE} |
           | **Duration** | ${BUILD_TIME} |
           | **Warnings** | ${WARNINGS_COUNT} |
-
+      
           ## 📱 Device Information
-
+      
           | Property | Value |
           |----------|-------|
           | **Device** | ${{ env.DEVICE_NAME }} |
@@ -1251,9 +1255,9 @@ jobs:
           | **Android Version** | ${KANDROID_VERSION} |
           | **Kernel Version** | ${TKERNEL_VERSION} |
           | **Branch** | common-${{ env.KERNEL_BRANCH }} |
-
+      
           ## 🔧 Build Configuration
-
+      
           | Component | Version/Setting |
           |-----------|----------------|
           | **Manager Source** | ${{ inputs.MANAGER_SOURCE }} |
@@ -1264,9 +1268,9 @@ jobs:
           | **SUSFS Branch** | ${SUSFS_BRANCH_NAME} |
           | **SUSFS Commit** | ${SUSFS_COMMIT_LINK} |
           | **SUSFS Dev Mode** | ${SUSFS_DEV_MODE} |
-
+      
           ## 📦 Build Output
-
+      
           | File | Details |
           |------|---------|
           | **ZIP Name** | \`${ZIP_NAME}\` |
@@ -1274,9 +1278,10 @@ jobs:
           | **ZIP SHA256** | \`${ZIP_SHA256}\` |
           | **Image Size** | ${IMAGE_SIZE} |
           | **Image SHA256** | \`${IMAGE_SHA256}\` |
-
+          | **Release** | ${RELEASE_URL} |
+      
           ## ⚙️ Features Status
-
+      
           | Feature | Status |
           |---------|--------|
           | **KPM** | ${KPM_STATUS} |
@@ -1287,60 +1292,45 @@ jobs:
           | **Unicode Bypass** | ${UNICODE_FIX_STATUS} |
           | **5US Fix** | ${XUS_FIX_STATUS} |
           | **Ccache** | ${CCACHE_STATUS} |
-
+      
           ## 📊 Performance Metrics
-
+      
           | Metric | Value |
           |--------|-------|
           | **Build Duration** | ${BUILD_TIME} |
           | **Ccache Hit Rate** | ${CCACHE_HIT_RATE} |
           | **Parallel Jobs** | $(nproc) cores |
           | **Compiler Warnings** | ${WARNINGS_COUNT} |
-
+      
           ## 💾 Disk Usage
-
+      
           \`\`\`
           $(df -h / | tail -1)
           \`\`\`
-
+      
           EOF
-
+      
           if [ "${{ job.status }}" = "failure" ]; then
             cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## 🔍 Troubleshooting
-
+      
           - ❌ Build failed - check logs for compilation errors
           - 💾 Verify disk space was sufficient throughout build
           - 📝 Review patch application status in earlier steps
           - 🔄 Consider re-running with fresh cache (BUILD_NOCCACHE=true)
-          - 📧 Report persistent issues with full logs
-
-          ### Common Issues:
-
-          1. **Out of disk space**: Enable SPACE_NOCLEAN=false or use smaller cache
-          2. **Patch conflicts**: Check if kernel version matches patch requirements
-          3. **Network timeouts**: Retry the workflow (automatic retry implemented)
-          4. **Missing dependencies**: Verify all required packages installed
-
+      
           EOF
           elif [ "${{ job.status }}" = "success" ]; then
             cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ Next Steps
-
-          1. 📥 Download the flashable ZIP from artifacts: \`${ZIP_NAME}\`
-          2. 🔄 Boot to recovery (TWRP/OrangeFox recommended)
+      
+          1. 📥 Download the flashable ZIP from **Releases (Assets)**: \`${ZIP_NAME}\`
+             - Release page: ${RELEASE_URL}
+          2. 🔄 Boot to recovery or use Kernel Flasher (TWRP/OrangeFox recommended)
           3. 📲 Flash the ZIP file
-          4. 🔄 Reboot and verify KSU manager installation
+          4. 🔄 Reboot and verify ReSukiSu manager installation
           5. ✅ Check root access and SUSFS functionality
-
-          ### Installation Notes:
-
-          - **Backup**: Always backup your current boot image before flashing
-          - **Compatibility**: Ensure your ROM matches Android ${KANDROID_VERSION}
-          - **Manager**: Install compatible manager from supported list
-          - **SUSFS**: If enabled, configure via KSU manager settings
-          - **Verification**: Check SHA256 hash matches: \`${ZIP_SHA256:0:16}...\`
-
+      
           EOF
           fi
 
@@ -1562,7 +1552,7 @@ jobs:
             echo "✅ Size: ${ZIP_SIZE:-N/A}"
             echo "✅ Duration: ${BUILD_TIME:-N/A}"
             echo "✅ SHA256: ${ZIP_SHA256:0:16}..."
-            echo "✅ Download from Artifacts section above"
+            echo "✅ Download from Releases (Assets)"
             echo "✅ ═══════════════════════════════════════════════════════"
           elif [ "${{ job.status }}" = "failure" ]; then
             echo "❌ ═══════════════════════════════════════════════════════"
