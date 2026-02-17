@@ -219,8 +219,8 @@ jobs:
           # Validation SUSFS_META
           SUSFS_META="${{ inputs.SUSFS_META }}"
           if [[ -n "$SUSFS_META" && "$SUSFS_META" != "-1" ]]; then
-            if [[ ! "$SUSFS_META" =~ ^[a-f0-9]{7,40}$ ]]; then
-              echo "⚠️ WARNING: SUSFS_META ne ressemble pas à un hash Git: $SUSFS_META"
+            if [[ ! "$SUSFS_META" =~ ^[a-f0-9]{7,40}$|^[0-9]+$ ]]; then
+              echo "⚠️ WARNING: SUSFS_META ne ressemble pas à un hash Git ou un nombre: $SUSFS_META"
             else
               echo "✅ SUSFS_META format valide"
             fi
@@ -638,14 +638,19 @@ jobs:
           if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
             echo "::group::SUSFS Integration"
             SUSFS_META="${{ inputs.SUSFS_META }}"
-            BR="gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}$( [ "${SUSFS_DEV_ENABLED}" = "1" ] && echo "-dev" || true )"
+            BR="gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}$( [ "${{ inputs.SUSFS_DEV }}" = "true" ] && echo "-dev" || true )"
             
             echo "📦 Cloning SUSFS branch: $BR"
             git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$BR" susfs4ksu
             cd susfs4ksu
             if [ -n "$SUSFS_META" ]; then
-              echo "🔄 Checking out SUSFS commit: $SUSFS_META"
-              git checkout "$SUSFS_META"
+              if [[ "$SUSFS_META" =~ ^[0-9]+$ ]]; then
+                echo "🔄 Checking out SUSFS HEAD~$SUSFS_META"
+                git checkout HEAD~"$SUSFS_META"
+              else
+                echo "🔄 Checking out SUSFS commit: $SUSFS_META"
+                git checkout "$SUSFS_META"
+              fi
             else
               echo "✅ Using latest SUSFS upstream"
             fi
@@ -684,13 +689,70 @@ jobs:
             return 1
           }
 
+          # Apply KSU Toolkit patch
           apply_patch_safe "../Action-Build/patches/ksu_toolkit.patch" "KSU Toolkit" || true
 
           if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            GKI_V="${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
+            SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
+
+            # Fix for kernel 5.15.0~5.15.123 (old C library support)
+            if [ "$GKI_V" == "android13-5.15" ] && [ "$SUBLEVEL" -lt 123 ]; then
+              echo "🔧 Fixing bugs for kernel 5.15.0~5.15.123 (old C library)"
+              apply_patch_safe "../../Action-Build/patches/fix_5.15.legacy" "5.15 Legacy Fix" || true
+            fi
+
+            # Fake patches for missing code patterns
+            fake_patched=0
+            if [ "$GKI_V" = "android15-6.6" ]; then
+              if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                echo "🔧 Adding missing nr_subpages declaration"
+                sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' \
+                       -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
+                fake_patched=1
+              fi
+            fi
+
+            if [ "$GKI_V" = "android14-6.1" ]; then
+              if ! grep -qxF $'\tif (!vma_pages(vma))' ./fs/proc/task_mmu.c; then
+                echo "🔧 Adding missing vma_pages check"
+                fake_patched=1
+              fi
+              if ! grep -qxF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
+                echo "🔧 Adding missing dma-buf.h header"
+                sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
+              fi
+            fi
+
+            if [ "$GKI_V" = "android12-5.10" ] || [ "$GKI_V" = "android13-5.15" ]; then
+              if ! grep -qxF $'\tif (!vma_pages(vma))' ./fs/proc/task_mmu.c; then
+                echo "🔧 Adding missing vma_pages check"
+                fake_patched=1
+              fi
+            fi
+
+            # Apply main SUSFS patch
             apply_patch_safe "50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" "SUSFS Integration" || true
-            if [ "${XUS_FIX_ENABLED}" = "1" ]; then
-              cp ../Action-Build/patches/No_5uS.patch ./
-              apply_patch_safe "No_5uS.patch" "5US Fix" || true
+
+            # Revert fake patches
+            if [ "$fake_patched" = 1 ]; then
+              echo "🔄 Reverting temporary fake patches..."
+              if [ "$GKI_V" = "android15-6.6" ]; then
+                if grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                  sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' \
+                         -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c
+                fi
+              fi
+              if [ "$GKI_V" = "android12-5.10" ] || [ "$GKI_V" = "android13-5.15" ] || [ "$GKI_V" = "android14-6.1" ]; then
+                if grep -qxF $'\t\tgoto show_pad;' ./fs/proc/task_mmu.c; then
+                  sed -i 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
+                fi
+              fi
+            fi
+
+            # Apply 5US fix if enabled
+            if [ "${{ inputs.XUS_FIX }}" = "true" ]; then
+              apply_patch_safe "../../Action-Build/patches/No_5uS.patch" "5US Fix" || true
             fi
           fi
           
@@ -1100,7 +1162,7 @@ jobs:
 
           echo "::endgroup::"
 
-      - name: Upload AK3 ZIP to GitHub Release (single file)
+      - name: Upload AK3 ZIP to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ak3-${{ github.run_id }}
@@ -1166,6 +1228,7 @@ jobs:
           KSUVER="${KSUVER:-N/A}"
           TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
           KANDROID_VERSION="${KANDROID_VERSION:-N/A}"
+          KERNEL_VERSION="${KERNEL_VERSION:-N/A}"
           BUILD_TIME="${BUILD_TIME:-N/A}"
           BUILD_START_DATE="${BUILD_START_DATE:-N/A}"
           WARNINGS_COUNT="${WARNINGS_COUNT:-N/A}"
@@ -1278,7 +1341,7 @@ jobs:
           | **ZIP SHA256** | \`${ZIP_SHA256}\` |
           | **Image Size** | ${IMAGE_SIZE} |
           | **Image SHA256** | \`${IMAGE_SHA256}\` |
-          | **Release** | ${RELEASE_URL} |
+          | **Release** | [Download from Releases](${RELEASE_URL}) |
       
           ## ⚙️ Features Status
       
@@ -1324,12 +1387,23 @@ jobs:
             cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ Next Steps
       
-          1. 📥 Download the flashable ZIP from **Releases (Assets)**: \`${ZIP_NAME}\`
-             - Release page: ${RELEASE_URL}
+          1. 📥 Download the flashable ZIP from **[Releases (Assets)](${RELEASE_URL})**
           2. 🔄 Boot to recovery or use Kernel Flasher (TWRP/OrangeFox recommended)
-          3. 📲 Flash the ZIP file
-          4. 🔄 Reboot and verify ReSukiSu manager installation
+          3. 📲 Flash the ZIP file: \`${ZIP_NAME}\`
+          4. 🔄 Reboot and verify ReSukiSU manager installation
           5. ✅ Check root access and SUSFS functionality
+      
+          ## 🔐 Verification
+      
+          **ZIP SHA256:**
+          \`\`\`
+          ${ZIP_SHA256}
+          \`\`\`
+      
+          **Image SHA256:**
+          \`\`\`
+          ${IMAGE_SHA256}
+          \`\`\`
       
           EOF
           fi
