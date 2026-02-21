@@ -532,58 +532,76 @@ jobs:
         run: |
           set -euo pipefail
           cd kernel_workspace
-
+      
           MANAGER_BRANCH="${{ steps.manager.outputs.manager_branch }}"
           KSU_META="${{ inputs.KSU_META }}"
-
+      
+          # Validate KSU_META: branch/tag/hash
+          if [[ ! "$KSU_META" =~ ^[^/]+/[^/]*/[^/]*$ ]]; then
+            echo "❌ KSU_META invalid: $KSU_META"
+            echo "Expected: branch/tag/hash (ex: main/Ultra/abc123)"
+            exit 10
+          fi
+      
           IFS='/' read -r BRANCH_NAME CUSTOM_TAG MANUAL_HASH <<< "$KSU_META"
-
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/${MANAGER_BRANCH}/kernel/setup.sh" | bash -s "$BRANCH_NAME"
+      
+          curl -fL --proto '=https' --tlsv1.2 \
+            -o /tmp/ksu_setup.sh \
+            "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/${MANAGER_BRANCH}/kernel/setup.sh"
+      
+          bash /tmp/ksu_setup.sh "$BRANCH_NAME"
+      
           cd ./KernelSU
-
+      
           if [[ -n "$MANUAL_HASH" ]]; then
             git fetch origin "$BRANCH_NAME" --depth=50
             git checkout "$MANUAL_HASH"
-            SHORT_HASH=${MANUAL_HASH:0:8}
+            SHORT_HASH="${MANUAL_HASH:0:8}"
+          else
+            SHORT_HASH=""
           fi
-
-          KSU_API_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/$BRANCH_NAME/kernel/Kbuild" | \
-            grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]' || true)
+      
+          KSU_API_VERSION="$(
+            curl -fsSL "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/$BRANCH_NAME/kernel/Kbuild" | \
+              grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]' || true
+          )"
           if [[ -z "$KSU_API_VERSION" || "$(printf '%s\n' "$KSU_API_VERSION" "3.1.7" | sort -V | head -n1)" != "3.1.7" ]]; then
             KSU_API_VERSION="3.1.7"
           fi
           echo "KSU_API_VERSION=$KSU_API_VERSION" >> "$GITHUB_ENV"
-
-          GIT_HASH=$(git rev-parse --short HEAD)
+      
+          GIT_HASH="$(git rev-parse --short HEAD)"
           if [[ -n "$MANUAL_HASH" ]]; then USE_HASH="$SHORT_HASH"; else USE_HASH="$GIT_HASH"; fi
-
+      
           if [[ -z "$CUSTOM_TAG" ]]; then
             VERSION_FULL="v$KSU_API_VERSION-$USE_HASH@$BRANCH_NAME"
           else
             VERSION_FULL="v$KSU_API_VERSION-$CUSTOM_TAG@$BRANCH_NAME[$USE_HASH]"
           fi
-
+      
           sed -i '/define get_ksu_version_full/,/endef/d' kernel/Kbuild
           sed -i '/KSU_VERSION_API :=/d' kernel/Kbuild
           sed -i '/KSU_VERSION_FULL :=/d' kernel/Kbuild
-
+      
           VERSION_DEFINITIONS=$(cat <<EOF
           define get_ksu_version_full
           $VERSION_FULL
           endef
-
+      
           KSU_VERSION_API := $KSU_API_VERSION
           KSU_VERSION_FULL := $VERSION_FULL
           EOF
           )
-
+      
           awk -v def="$VERSION_DEFINITIONS" '
             /REPO_OWNER :=/ {print; print def; inserted=1; next}
             1
             END {if (!inserted) print def}
           ' kernel/Kbuild > kernel/Kbuild.tmp && mv kernel/Kbuild.tmp kernel/Kbuild
-
+      
           echo "KSU_COMMIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      
+          # Note: This assumes rev-list count is meaningful on MANAGER_BRANCH in this repo.
           KSU_VERSION=$(expr $(git rev-list --count "$MANAGER_BRANCH" 2>/dev/null || echo 13000) + 37185)
           echo "KSUVER=$KSU_VERSION" >> "$GITHUB_ENV"
 
