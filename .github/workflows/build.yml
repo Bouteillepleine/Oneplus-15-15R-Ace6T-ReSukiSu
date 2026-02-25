@@ -1110,27 +1110,6 @@ jobs:
           
           echo "::endgroup::"
 
-      - name: Apply patch_linux and Replace Image
-        if: ${{ inputs.KPM == 'KPM' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "::group::KPM Patch Application"
-          PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/SukiSU_patch/kpm"
-          OUT_DIR="${GITHUB_WORKSPACE}/kernel_workspace/out/Final-Image-Find"
-          cd "${OUT_DIR}"
-
-          echo "📝 Applying KPM patch_linux..."
-          cp "${PATCH_DIR}/patch_linux" .
-          chmod +x patch_linux
-          ./patch_linux
-
-          rm -f Image
-          mv oImage Image
-          cp Image "${GITHUB_WORKSPACE}/AnyKernel3/Image"
-          echo "✅ KPM patched Image replaced"
-          echo "::endgroup::"
-
       - name: Download Latest SUSFS Module from CI        
         continue-on-error: true
         shell: bash
@@ -1243,6 +1222,27 @@ jobs:
           
           echo "::endgroup::"
 
+      - name: Apply patch_linux and Replace Image
+        if: ${{ inputs.KPM == 'KPM' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::KPM Patch Application"
+          PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/SukiSU_patch/kpm"
+          OUT_DIR="${GITHUB_WORKSPACE}/kernel_workspace/out/Final-Image-Find"
+          cd "${OUT_DIR}"
+
+          echo "📝 Applying KPM patch_linux..."
+          cp "${PATCH_DIR}/patch_linux" .
+          chmod +x patch_linux
+          ./patch_linux
+
+          rm -f Image
+          mv oImage Image
+          cp Image "${GITHUB_WORKSPACE}/AnyKernel3/Image"
+          echo "✅ KPM patched Image replaced"
+          echo "::endgroup::"
+
       - name: Set zip Suffix
         id: suffix
         shell: bash
@@ -1263,14 +1263,59 @@ jobs:
           ZIP_NAME="AnyKernel3_${{ inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_${{ env.DEVICE_NAME_SAFE }}_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}.zip"
           echo "📦 Creating: $ZIP_NAME"
 
-          rm -f AnyKernel3/*.zip
-          (cd AnyKernel3 && zip -r9 "${GITHUB_WORKSPACE}/${ZIP_NAME}" . -x "*.git*" -x "*.zip")
+          # 🆕 AMÉLIORATION : Vérifier la présence du module SUSFS
+          SUSFS_MODULE_PRESENT=false
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            if ls AnyKernel3/ksu_module_susfs*.zip 1> /dev/null 2>&1; then
+              SUSFS_MODULE_PRESENT=true
+              SUSFS_MODULE_FILE=$(ls AnyKernel3/ksu_module_susfs*.zip | head -n1)
+              echo "✅ SUSFS module found: $(basename "$SUSFS_MODULE_FILE")"
+              SUSFS_MODULE_SIZE=$(stat -c%s "$SUSFS_MODULE_FILE" 2>/dev/null || stat -f%z "$SUSFS_MODULE_FILE" 2>/dev/null)
+              echo "📊 Module size: $(numfmt --to=iec-i --suffix=B "$SUSFS_MODULE_SIZE" 2>/dev/null || echo "${SUSFS_MODULE_SIZE} bytes")"
+            else
+              echo "⚠️ WARNING: SUSFS module not found in AnyKernel3 folder"
+              echo "   Expected: ksu_module_susfs*.zip"
+              echo "   Contents:"
+              ls -lh AnyKernel3/
+            fi
+          fi
+
+          # 🆕 AMÉLIORATION : Créer le ZIP en incluant ou excluant les .zip selon la présence du module
+          cd AnyKernel3
+          if [ "$SUSFS_MODULE_PRESENT" = true ]; then
+            echo "📦 Creating ZIP with SUSFS module included"
+            zip -r9 "${GITHUB_WORKSPACE}/${ZIP_NAME}" . \
+              -x "*.git*" \
+              -x "AnyKernel3*.zip"
+          else
+            echo "📦 Creating ZIP without SUSFS module (excluding all .zip files)"
+            zip -r9 "${GITHUB_WORKSPACE}/${ZIP_NAME}" . \
+              -x "*.git*" \
+              -x "*.zip"
+          fi
+          cd ..
 
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 
           ZIP_SIZE=$(du -h "${GITHUB_WORKSPACE}/${ZIP_NAME}" | awk '{print $1}')
           echo "✅ ZIP created: ${ZIP_NAME} (${ZIP_SIZE})"
           ls -lh "${GITHUB_WORKSPACE}/${ZIP_NAME}"
+
+          # 🆕 AMÉLIORATION : Vérifier le contenu du ZIP
+          echo ""
+          echo "📋 Verifying ZIP contents:"
+          unzip -l "${GITHUB_WORKSPACE}/${ZIP_NAME}" | grep -E "(Image|ksu_module_susfs|anykernel.sh)" || true
+
+          # 🆕 AMÉLIORATION : Vérification finale de la présence du module SUSFS
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            if unzip -l "${GITHUB_WORKSPACE}/${ZIP_NAME}" | grep -q "ksu_module_susfs.*\.zip"; then
+              echo ""
+              echo "✅ SUSFS module successfully included in ZIP"
+            else
+              echo ""
+              echo "⚠️ WARNING: SUSFS module NOT found in final ZIP"
+            fi
+          fi
 
           echo "::endgroup::"
 
