@@ -987,7 +987,7 @@ jobs:
           ls -lh "${GITHUB_WORKSPACE}/${ZIP_NAME}"
 
       - name: Upload AK3 ZIP to GitHub Release
-        uses: softprops/action-gh-release@7b4da11513bf3f43f9999e90eabced41ab8f9ece  # v2.2.1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ak3-${{ github.run_id }}
           name: AK3 build ${{ github.run_id }}
