@@ -42,7 +42,7 @@ on:
         type: string
         description: "Custom build time (enter F to use current UTC time)"
         required: false
-        default: "Wed Feb 18 19:20:21 UTC 2026"
+        default: "Sat Feb 28 21:22:23 UTC 2026"
 
       KSU_META:
         type: string
