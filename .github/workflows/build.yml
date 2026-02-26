@@ -736,6 +736,10 @@ jobs:
           echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=n" >> "$CONFIG_FILE"
           echo "CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y"     >> "$CONFIG_FILE"
           echo "CONFIG_OPTIMIZE_INLINING=y"              >> "$CONFIG_FILE"
+          echo "CONFIG_MPTCP=y"                           >> "$CONFIG_FILE"
+          echo "CONFIG_INET_MPTCP_DIAG=y"                 >> "$CONFIG_FILE"
+          echo "CONFIG_TCP_FASTOPEN=y"                    >> "$CONFIG_FILE"
+          echo "CONFIG_NET_RX_BUSY_POLL=y"                >> "$CONFIG_FILE"
 
           echo "CONFIG_DEBUG_KERNEL=n"       >> "$CONFIG_FILE"
           echo "CONFIG_DEBUG_INFO=n"         >> "$CONFIG_FILE"
@@ -1164,14 +1168,14 @@ jobs:
           fi
 
           # ── Feature badges ──────────────────────────────────────────────────
-          [ "${LSM_ENABLED}"            = "1" ] && LSM_S="✅ On"  || LSM_S="❌ Off"
-          [ "${BBR_ECN_ENABLED}"        = "1" ] && BBR_S="✅ On"  || BBR_S="❌ Off"
-          [ "${NETFILTER_ENABLED}"      = "1" ] && NET_S="✅ On"  || NET_S="❌ Off"
-          [ "${UNICODE_BYPASS_ENABLED}" = "1" ] && UNI_S="✅ On"  || UNI_S="❌ Off"
-          [ "${XUS_FIX_ENABLED}"        = "1" ] && XUS_S="✅ On"  || XUS_S="❌ Off"
-          [ "${BUILD_NOCCACHE_ENABLED}" = "1" ] && CC_S="❌ Off"  || CC_S="✅ On"
-          [ "${SUSFS_DEV_ENABLED}"      = "1" ] && DEV_S="Dev"    || DEV_S="Stable"
-          [ "${SUSFS_MODULE_INCLUDED}"  = "true" ] && MOD_S="✅ Included" || MOD_S="❌ Not included"
+          [ "${LSM_ENABLED}"            = "1" ]    && LSM_S="✅ On"         || LSM_S="❌ Off"
+          [ "${BBR_ECN_ENABLED}"        = "1" ]    && BBR_S="✅ On"         || BBR_S="❌ Off"
+          [ "${NETFILTER_ENABLED}"      = "1" ]    && NET_S="✅ On"         || NET_S="❌ Off"
+          [ "${UNICODE_BYPASS_ENABLED}" = "1" ]    && UNI_S="✅ On"         || UNI_S="❌ Off"
+          [ "${XUS_FIX_ENABLED}"        = "1" ]    && XUS_S="✅ On"         || XUS_S="❌ Off"
+          [ "${BUILD_NOCCACHE_ENABLED}" = "1" ]    && CC_S="❌ Off"         || CC_S="✅ On"
+          [ "${SUSFS_DEV_ENABLED}"      = "1" ]    && DEV_S="Dev"           || DEV_S="Stable"
+          [ "${SUSFS_MODULE_INCLUDED}"  = "true" ] && MOD_S="✅ Included"   || MOD_S="❌ Not included"
 
           case "${{ inputs.KPM }}" in
             KPM) KPM_S="✅ KPM" ;;
@@ -1194,65 +1198,73 @@ jobs:
             WARN_S="🔴 ${WARNINGS_COUNT}"
           fi
 
-          # ── Write summary via printf — no heredoc indentation issues ────────
+          # ── Pre-build release link (✅ fix: variable intermédiaire — évite
+          #    le bug printf '⬇️...' interprété comme option '-' sur bash builtin)
+          RELEASE_LINK="[Download](${RELEASE_URL})"
+
+          # ── Write summary via printf ─────────────────────────────────────────
           {
-            printf '# %s %s — ReSukiSU Build %s\n\n' \
+            printf '%s %s \xe2\x80\x94 ReSukiSU Build %s\n\n' \
               "${STATUS_COLOR}" "${DEVICE_NAME}" "${STATUS_TEXT}"
 
-            printf '> [View full run log](%s) · [Download release](%s)\n\n' \
-              "${RUN_URL}" "${RELEASE_URL}"
+            printf '> [View full run log](%s) \xc2\xb7 %s\n\n' \
+              "${RUN_URL}" "${RELEASE_LINK}"
 
-            printf '---\n\n'
+            printf '%s\n\n' '---'
 
-            printf '## 📱 Device\n'
-            printf '| Property | Value |\n'
-            printf '|----------|-------|\n'
-            printf '| **Device** | %s |\n'         "${DEVICE_NAME}"
-            printf '| **Codename** | `%s` |\n'     "${DEVICE_CODENAME}"
-            printf '| **SoC** | `%s` |\n'          "${CPU}"
+            printf '%s\n' '## 📱 Device'
+            printf '%s\n' '| Property | Value |'
+            printf '%s\n' '|----------|-------|'
+            printf '| **Device** | %s |\n'          "${DEVICE_NAME}"
+            printf '| **Codename** | `%s` |\n'      "${DEVICE_CODENAME}"
+            printf '| **SoC** | `%s` |\n'           "${CPU}"
             printf '| **Kernel Branch** | `%s` |\n' "${KERNEL_BRANCH}"
-            printf '| **Manager** | %s |\n\n'      "${{ inputs.MANAGER_SOURCE }}"
+            printf '| **Manager** | %s |\n'         "${{ inputs.MANAGER_SOURCE }}"
+            printf '\n'
 
-            printf '---\n\n'
+            printf '%s\n\n' '---'
 
-            printf '## 🔨 Build Info\n'
-            printf '| Property | Value |\n'
-            printf '|----------|-------|\n'
-            printf '| **Status** | %s %s |\n'      "${STATUS_COLOR}" "${STATUS_TEXT}"
-            printf '| **Started** | %s |\n'        "${BUILD_START_DATE}"
-            printf '| **Duration** | ⏱️ %s |\n'    "${BUILD_TIME}"
-            printf '| **Android** | %s |\n'        "${KANDROID_VERSION}"
-            printf '| **Kernel** | `%s` |\n'       "${TKERNEL_VERSION}"
-            printf '| **KSU** | %s |\n'            "${KSU_DISPLAY}"
-            printf '| **SUSFS** | %s |\n'          "${SUSFS_STATUS}"
-            printf '| **Warnings** | %s |\n\n'     "${WARN_S}"
+            printf '%s\n' '## 🔨 Build Info'
+            printf '%s\n' '| Property | Value |'
+            printf '%s\n' '|----------|-------|'
+            printf '| **Status** | %s %s |\n'    "${STATUS_COLOR}" "${STATUS_TEXT}"
+            printf '| **Started** | %s |\n'      "${BUILD_START_DATE}"
+            printf '| **Duration** | %s |\n'     "⏱️ ${BUILD_TIME}"
+            printf '| **Android** | %s |\n'      "${KANDROID_VERSION}"
+            printf '| **Kernel** | `%s` |\n'     "${TKERNEL_VERSION}"
+            printf '| **KSU** | %s |\n'          "${KSU_DISPLAY}"
+            printf '| **SUSFS** | %s |\n'        "${SUSFS_STATUS}"
+            printf '| **Warnings** | %s |\n'     "${WARN_S}"
+            printf '\n'
 
-            printf '---\n\n'
+            printf '%s\n\n' '---'
 
-            printf '## 📦 Output\n'
-            printf '| File | Details |\n'
-            printf '|------|----------|\n'
+            printf '%s\n' '## 📦 Output'
+            printf '%s\n' '| File | Details |'
+            printf '%s\n' '|------|---------|'
             printf '| **ZIP** | `%s` |\n'          "${ZIP_NAME}"
-            printf '| **ZIP Size** | %s |\n'       "${ZIP_SIZE}"
-            printf '| **ZIP SHA256** | `%s` |\n'   "${ZIP_SHA256}"
-            printf '| **Image Size** | %s |\n'     "${IMAGE_SIZE}"
-            printf '| **Image SHA256** | `%s` |\n' "${IMAGE_SHA256}"
-            printf '| **SUSFS Module** | %s |\n'   "${MOD_S}"
-            printf '| **Release** | [⬇️ Download](%s) |\n\n' "${RELEASE_URL}"
+            printf '| **ZIP Size** | %s |\n'        "${ZIP_SIZE}"
+            printf '| **ZIP SHA256** | `%s` |\n'    "${ZIP_SHA256}"
+            printf '| **Image Size** | %s |\n'      "${IMAGE_SIZE}"
+            printf '| **Image SHA256** | `%s` |\n'  "${IMAGE_SHA256}"
+            printf '| **SUSFS Module** | %s |\n'    "${MOD_S}"
+            # ✅ fix: variable pré-construite — évite printf '⬇️...' → invalid option
+            printf '| **Release** | %s |\n'         "${RELEASE_LINK}"
+            printf '\n'
 
-            printf '---\n\n'
+            printf '%s\n\n' '---'
 
-            printf '## ⚙️ Features\n'
-            printf '| Feature | Status |\n'
-            printf '|---------|--------|\n'
-            printf '| **KPM** | %s |\n'            "${KPM_S}"
-            printf '| **LSM (BBG)** | %s |\n'      "${LSM_S}"
-            printf '| **BBR+ECN** | %s |\n'        "${BBR_S}"
-            printf '| **NETFILTER** | %s |\n'      "${NET_S}"
-            printf '| **Unicode Bypass** | %s |\n' "${UNI_S}"
-            printf '| **5US Fix** | %s |\n'        "${XUS_S}"
-            printf '| **Ccache** | %s (hit: %s) |\n' "${CC_S}" "${CCACHE_HIT_RATE}"
-            printf '| **Suffix** | `%s` |\n'       "${{ inputs.SUFFIX }}"
+            printf '%s\n' '## ⚙️ Features'
+            printf '%s\n' '| Feature | Status |'
+            printf '%s\n' '|---------|--------|'
+            printf '| **KPM** | %s |\n'             "${KPM_S}"
+            printf '| **LSM (BBG)** | %s |\n'       "${LSM_S}"
+            printf '| **BBR+ECN** | %s |\n'         "${BBR_S}"
+            printf '| **NETFILTER** | %s |\n'       "${NET_S}"
+            printf '| **Unicode Bypass** | %s |\n'  "${UNI_S}"
+            printf '| **5US Fix** | %s |\n'         "${XUS_S}"
+            printf '| **Ccache** | %s |\n'          "${CC_S} (hit: ${CCACHE_HIT_RATE})"
+            printf '| **Suffix** | `%s` |\n'        "${{ inputs.SUFFIX }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Build Log
