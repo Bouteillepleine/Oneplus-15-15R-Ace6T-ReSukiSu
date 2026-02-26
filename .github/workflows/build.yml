@@ -9,9 +9,9 @@ on:
         required: true
         default: oneplus15
         options:
-          - oneplus15
-          - oneplus15r
-          - ace6t
+          - oneplus15      # OnePlus 15 (sm8850)
+          - oneplus15r     # OnePlus 15R (sm8845)
+          - ace6t          # OnePlus Ace 6T (sm8845)
 
       MANAGER_SOURCE:
         type: choice
@@ -34,61 +34,61 @@ on:
 
       SUSFS_META:
         type: string
-        description: "Roll back SUSFS (-1 to disable, empty = latest, number = HEAD~N)"
+        description: "Roll back SUSFS to a specific hash version (-1 to disable, empty = latest)"
         required: false
         default: ""
 
       BUILD_TIME:
         type: string
-        description: "Custom build time (F = current UTC time)"
+        description: "Custom build time (enter F to use current UTC time)"
         required: false
         default: "Wed Feb 18 19:20:21 UTC 2026"
 
       KSU_META:
         type: string
-        description: "branch/tag/hash  (e.g. main/⚡Ultra⚡/)"
+        description: "Branch name (required) / custom version tag (optional) / rollback commit hash (optional)"
         required: false
         default: "main/⚡Ultra⚡/"
 
       SUFFIX:
         type: string
-        description: "Custom kernel suffix (empty = random)"
+        description: "Custom kernel suffix (leave empty to use a random string)"
         required: false
         default: "5-ga5f232d1ead0-ab14083253-4k"
 
       SUBLEVEL:
         type: string
-        description: "Custom SUBLEVEL spoof (integer)"
+        description: "Custom kernel level spoofing (SUBLEVEL)"
         required: false
         default: ""
 
       LSM:
         type: boolean
-        description: "Enable BBG write-protection module?"
+        description: "Enable critical partition write-protection module (BBG)?"
         required: true
         default: true
 
       NETFILTER:
         type: boolean
-        description: "Enable NETFILTER extensions?"
+        description: "Enable network feature extensions (NETFILTER)?"
         required: true
         default: true
 
       BBR_ECN:
         type: boolean
-        description: "Enable BBR+ECN network optimisation?"
+        description: "Enable network optimization algorithms (BBR+ECN)?"
         required: true
         default: true
 
       UNICODE_BYPASS:
         type: boolean
-        description: "Add Unicode invisible-codepoint bypass?"
+        description: "Add Unicode invisible-codepoint bypass for the read-vulnerability fix?"
         required: true
         default: false
 
       XUS_FIX:
         type: boolean
-        description: "Prevent 5US error file generation?"
+        description: "Prevent generation of 5US error files?"
         required: true
         default: false
 
@@ -110,54 +110,8 @@ on:
         required: true
         default: false
 
-      CCACHE_EPOCH:
-        type: string
-        description: "Bump to force a fresh ccache key (e.g. 1, 2, 20260226)"
-        required: false
-        default: "1"
-
-      # ── Supply-chain hardening ──────────────────────────────────────────
-      # Format: "<commit-sha>:<sha256-of-script>"
-      KSU_SETUP_PIN:
-        type: string
-        description: "ReSukiSU setup.sh pin — format: <commit-sha>:<sha256>"
-        required: false
-        default: "CHANGE_ME_SHA:CHANGE_ME_SHA256"
-
-      # Format: "<commit-sha>:<sha256-of-script>"  (required when LSM=true)
-      BBG_SETUP_PIN:
-        type: string
-        description: "Baseband-guard setup.sh pin — format: <commit-sha>:<sha256>"
-        required: false
-        default: "CHANGE_ME_SHA:CHANGE_ME_SHA256"
-
-      SUSFS_MODULE_SHA256:
-        type: string
-        description: "Expected SHA256 of SUSFS module release zip (recommended)"
-        required: false
-        default: ""
-
-      # Format: "<sukisu-sha>:<action-build-sha>:<anykernel3-sha>"
-      PATCH_PINS:
-        type: string
-        description: "Patch repo pins — format: <SukiSU_patch-sha>:<Action-Build-sha>:<AnyKernel3-sha>"
-        required: false
-        default: "CHANGE_ME_SUKISU:CHANGE_ME_ACTION:CHANGE_ME_ANYKERNEL"
-
-      PATCH_LINUX_SHA256:
-        type: string
-        description: "Expected SHA256 of patch_linux binary (required if KPM=KPM)"
-        required: false
-        default: ""
-
-      SUSFS_COMMIT_PIN:
-        type: string
-        description: "Commit SHA to pin simonpunk/susfs4ksu (recommended)"
-        required: false
-        default: ""
-
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: resukisu-${{ github.ref }}-${{ inputs.DEVICE }}
@@ -167,21 +121,15 @@ jobs:
   build:
     name: >-
       ${{ inputs.DEVICE == 'oneplus15' && 'OnePlus 15' || inputs.DEVICE == 'oneplus15r' && 'OnePlus 15R' || 'Ace 6T' }}
-      ${{ inputs.KPM == 'KPM' && '[KPM] ' || inputs.KPM == 'KPN' && '[KPN] ' || inputs.KPM == 'NoN' && '[NoN] ' || '' }}${{ inputs.LSM && '[LSM]' || '' }}
+      ${{ inputs.KPM == 'KPM' && '[KPM] ' || inputs.KPM == 'KPN' && '[KPN] ' || '' }}${{ inputs.LSM && '[LSM]' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
-
-    permissions:
-      contents: write
 
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
       CCACHE_MAXSIZE: 8G
-      # Sentinel — replaced by Set Cache Environment when ccache is enabled
-      CCACHE_DIR: "__unset__"
-
       LSM_ENABLED: ${{ inputs.LSM && '1' || '0' }}
       NETFILTER_ENABLED: ${{ inputs.NETFILTER && '1' || '0' }}
       BBR_ECN_ENABLED: ${{ inputs.BBR_ECN && '1' || '0' }}
@@ -191,22 +139,17 @@ jobs:
       SPACE_NOCLEAN_ENABLED: ${{ inputs.SPACE_NOCLEAN && '1' || '0' }}
       BUILD_NOCCACHE_ENABLED: ${{ inputs.BUILD_NOCCACHE && '1' || '0' }}
 
-      CCACHE_EPOCH: ${{ inputs.CCACHE_EPOCH }}
-
     steps:
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-
-      - name: Mask Sensitive Values
-        shell: bash
-        run: |
-          echo "::add-mask::${{ secrets.GITHUB_TOKEN }}"
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
 
       - name: Set Device Configuration
         id: device_config
         shell: bash
         run: |
           set -euo pipefail
+          echo "::group::Device Configuration"
+
           case "${{ inputs.DEVICE }}" in
             oneplus15)
               echo "DEVICE_NAME=OnePlus 15"               >> "$GITHUB_OUTPUT"
@@ -235,15 +178,16 @@ jobs:
               ;;
           esac
 
+          echo "::endgroup::"
+
       - name: Set Environment Variables
         shell: bash
         run: |
           set -euo pipefail
-          echo "CPU=${{ steps.device_config.outputs.CPU }}"                           >> "$GITHUB_ENV"
-          echo "KERNEL_BRANCH=${{ steps.device_config.outputs.KERNEL_BRANCH }}"       >> "$GITHUB_ENV"
-          echo "DEVICE_NAME=${{ steps.device_config.outputs.DEVICE_NAME }}"           >> "$GITHUB_ENV"
-          echo "DEVICE_NAME_SAFE=${{ steps.device_config.outputs.DEVICE_NAME_SAFE }}" >> "$GITHUB_ENV"
-          echo "DEVICE_CODENAME=${{ steps.device_config.outputs.DEVICE_CODENAME }}"   >> "$GITHUB_ENV"
+          echo "CPU=${{ steps.device_config.outputs.CPU }}"                            >> "$GITHUB_ENV"
+          echo "KERNEL_BRANCH=${{ steps.device_config.outputs.KERNEL_BRANCH }}"        >> "$GITHUB_ENV"
+          echo "DEVICE_NAME=${{ steps.device_config.outputs.DEVICE_NAME }}"            >> "$GITHUB_ENV"
+          echo "DEVICE_NAME_SAFE=${{ steps.device_config.outputs.DEVICE_NAME_SAFE }}"  >> "$GITHUB_ENV"
 
       - name: Record Build Start Time
         shell: bash
@@ -252,82 +196,28 @@ jobs:
           echo "BUILD_START_TIME=$(date +%s)"                         >> "$GITHUB_ENV"
           echo "BUILD_START_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_ENV"
 
-      - name: Validate Inputs and Parse Pins
+      - name: Validate Inputs
         shell: bash
         run: |
           set -euo pipefail
+          echo "::group::Input Validation"
 
-          # ── KSU_META format ────────────────────────────────────────────
           KSU_META="${{ inputs.KSU_META }}"
-          [[ "$KSU_META" =~ ^[^/]+/[^/]*/[^/]*$ ]] || {
-            echo "❌ ERROR: invalid KSU_META format: $KSU_META"
-            echo "   Expected: branch/tag/hash  (e.g. main/⚡Ultra⚡/abc123)"
+          if [[ ! "$KSU_META" =~ ^[^/]+/[^/]*/[^/]*$ ]]; then
+            echo "❌ ERROR: KSU_META format invalide"
+            echo "   Format attendu: branch/tag/hash (ex: main/⚡Ultra⚡/abc123)"
+            echo "   Reçu: $KSU_META"
             exit 1
-          }
+          fi
 
-          # ── SUBLEVEL ───────────────────────────────────────────────────
           SUBLEVEL="${{ inputs.SUBLEVEL }}"
           if [[ -n "$SUBLEVEL" && ! "$SUBLEVEL" =~ ^[0-9]+$ ]]; then
-            echo "❌ ERROR: SUBLEVEL must be an integer, got: $SUBLEVEL"
+            echo "❌ ERROR: SUBLEVEL doit être un nombre entier"
             exit 1
           fi
 
-          # ── Parse KSU_SETUP_PIN  (<ref>:<sha256>) ──────────────────────
-          KSU_SETUP_PIN="${{ inputs.KSU_SETUP_PIN }}"
-          KSU_SETUP_REF="${KSU_SETUP_PIN%%:*}"
-          KSU_SETUP_SHA256="${KSU_SETUP_PIN#*:}"
-          if [[ "$KSU_SETUP_REF" == CHANGE_ME_* || -z "$KSU_SETUP_REF" ]]; then
-            echo "❌ ERROR: KSU_SETUP_PIN ref must be a real commit SHA (got: $KSU_SETUP_REF)"
-            exit 1
-          fi
-          if [[ -z "$KSU_SETUP_SHA256" || "$KSU_SETUP_SHA256" == CHANGE_ME_* ]]; then
-            echo "❌ ERROR: KSU_SETUP_PIN sha256 must be provided"
-            exit 1
-          fi
-          echo "KSU_SETUP_REF=${KSU_SETUP_REF}"       >> "$GITHUB_ENV"
-          echo "KSU_SETUP_SHA256=${KSU_SETUP_SHA256}" >> "$GITHUB_ENV"
-
-          # ── Parse BBG_SETUP_PIN  (<ref>:<sha256>) ──────────────────────
-          if [[ "${{ inputs.LSM }}" == "true" ]]; then
-            BBG_SETUP_PIN="${{ inputs.BBG_SETUP_PIN }}"
-            BBG_SETUP_REF="${BBG_SETUP_PIN%%:*}"
-            BBG_SETUP_SHA256="${BBG_SETUP_PIN#*:}"
-            if [[ "$BBG_SETUP_REF" == CHANGE_ME_* || -z "$BBG_SETUP_REF" ]]; then
-              echo "❌ ERROR: BBG_SETUP_PIN ref must be a real commit SHA (LSM=true)"
-              exit 1
-            fi
-            if [[ -z "$BBG_SETUP_SHA256" || "$BBG_SETUP_SHA256" == CHANGE_ME_* ]]; then
-              echo "❌ ERROR: BBG_SETUP_PIN sha256 must be provided (LSM=true)"
-              exit 1
-            fi
-            echo "BBG_SETUP_REF=${BBG_SETUP_REF}"       >> "$GITHUB_ENV"
-            echo "BBG_SETUP_SHA256=${BBG_SETUP_SHA256}" >> "$GITHUB_ENV"
-          fi
-
-          # ── Parse PATCH_PINS  (<sukisu>:<action>:<anykernel>) ──────────
-          PATCH_PINS="${{ inputs.PATCH_PINS }}"
-          SUKISU_PATCH_REF="$(echo "$PATCH_PINS" | cut -d: -f1)"
-          ACTION_BUILD_REF="$(echo "$PATCH_PINS" | cut -d: -f2)"
-          ANYKERNEL3_REF="$(echo "$PATCH_PINS"   | cut -d: -f3)"
-
-          for var_name in SUKISU_PATCH_REF ACTION_BUILD_REF ANYKERNEL3_REF; do
-            val="${!var_name}"
-            if [[ "$val" == CHANGE_ME_* || -z "$val" ]]; then
-              echo "❌ ERROR: ${var_name} must be a real commit SHA in PATCH_PINS (got: $val)"
-              exit 1
-            fi
-          done
-          echo "SUKISU_PATCH_REF=${SUKISU_PATCH_REF}" >> "$GITHUB_ENV"
-          echo "ACTION_BUILD_REF=${ACTION_BUILD_REF}" >> "$GITHUB_ENV"
-          echo "ANYKERNEL3_REF=${ANYKERNEL3_REF}"     >> "$GITHUB_ENV"
-
-          # ── patch_linux SHA256 ─────────────────────────────────────────
-          if [[ "${{ inputs.KPM }}" == "KPM" && -z "${{ inputs.PATCH_LINUX_SHA256 }}" ]]; then
-            echo "❌ ERROR: PATCH_LINUX_SHA256 must be provided when KPM=KPM"
-            exit 1
-          fi
-
-          echo "✅ All inputs validated and pins parsed"
+          echo "✅ All inputs validated"
+          echo "::endgroup::"
 
       - name: Pre-build Space Boost
         if: ${{ !inputs.SPACE_NOCLEAN }}
@@ -337,17 +227,19 @@ jobs:
           echo "::group::Disk before cleanup"
           df -h
           echo "::endgroup::"
+
           sudo rm -rf /opt/hostedtoolcache/go /opt/hostedtoolcache/Ruby "$HOME/.cache" || true
           sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/*                             || true
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android                          || true
           sudo docker system prune -af 2>/dev/null                                      || true
+
           echo "::group::Disk after cleanup"
           df -h
           echo "::endgroup::"
 
       - name: Maximize Build Space
         if: ${{ !inputs.SPACE_NOCLEAN }}
-        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c # v10
+        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c  # v10
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
@@ -367,26 +259,58 @@ jobs:
             kmod libdw-dev elfutils zip bc cpio
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/* || true
+          df -h
+
+      - name: Debug Show Selected Configuration
+        shell: bash
+        run: |
+          echo "::group::Build Configuration"
+          echo "📱 Device     : ${{ steps.device_config.outputs.DEVICE_NAME }}"
+          echo "🔧 Codename   : ${{ steps.device_config.outputs.DEVICE_CODENAME }}"
+          echo "💻 SoC        : ${{ steps.device_config.outputs.CPU }}"
+          echo "🌿 Branch     : ${{ steps.device_config.outputs.KERNEL_BRANCH }}"
+          echo "👤 Manager    : ${{ inputs.MANAGER_SOURCE }}"
+          echo "🔌 KPM        : ${{ inputs.KPM }}"
+          echo "🔐 SUSFS Meta : ${{ inputs.SUSFS_META }}"
+          echo "🎯 KSU Meta   : ${{ inputs.KSU_META }}"
+          echo "⏰ Build Time : ${{ inputs.BUILD_TIME }}"
+          echo "🏷️  Suffix     : ${{ inputs.SUFFIX }}"
+          echo "🛡️  LSM        : ${{ inputs.LSM }}"
+          echo "🌐 NETFILTER  : ${{ inputs.NETFILTER }}"
+          echo "🚀 BBR+ECN   : ${{ inputs.BBR_ECN }}"
+          echo "🔤 Unicode    : ${{ inputs.UNICODE_BYPASS }}"
+          echo "🔧 XUS Fix    : ${{ inputs.XUS_FIX }}"
+          echo "🧪 SUSFS Dev  : ${{ inputs.SUSFS_DEV }}"
+          echo "💾 NoClean    : ${{ inputs.SPACE_NOCLEAN }}"
+          echo "🗄️  NoCcache   : ${{ inputs.BUILD_NOCCACHE }}"
+          echo "::endgroup::"
 
       - name: Set Cache Environment
         if: ${{ !inputs.BUILD_NOCCACHE }}
         shell: bash
         run: |
           set -euxo pipefail
-          CACHE_KEY="${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}-epoch${{ inputs.CCACHE_EPOCH }}"
+          CACHE_KEY="${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}"
           CCACHE_PATH="${GITHUB_WORKSPACE}/.ccache_${CACHE_KEY}"
           echo "CCACHE_DIR=${CCACHE_PATH}" >> "$GITHUB_ENV"
           mkdir -p "${CCACHE_PATH}"
           echo "✅ Ccache directory: ${CCACHE_PATH}"
 
+      - name: Configure Git
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global user.name "OnePlus"
+          git config --global user.email "OnePlus@qq.com"
+          git config --global advice.detachedHead false
+
       - name: Restore Ccache
         if: ${{ !inputs.BUILD_NOCCACHE }}
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4.2.3
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}-epoch${{ inputs.CCACHE_EPOCH }}
+          key: ccache-${{ runner.os }}-${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}
           restore-keys: |
-            ccache-${{ runner.os }}-${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}-
             ccache-${{ runner.os }}-${{ inputs.DEVICE }}-
             ccache-${{ runner.os }}-
 
@@ -395,10 +319,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${CCACHE_DIR:-__unset__}" = "__unset__" ] || [ -z "${CCACHE_DIR}" ]; then
-            echo "⚠️ CCACHE_DIR not set — skipping ccache init"
-            exit 0
-          fi
           if command -v ccache >/dev/null 2>&1; then
             mkdir -p "${CCACHE_DIR}"
             ccache -M "${CCACHE_MAXSIZE}" || true
@@ -417,7 +337,19 @@ jobs:
           sudo mv "$HOME/repo" /usr/local/bin/repo
           repo version
 
-      - name: Repo Init + Sync
+      - name: Smart Disk Space Check
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h
+          AVAIL_GB=$(df -BG "$GITHUB_WORKSPACE" | awk 'NR==2{gsub("G","",$4); print $4}')
+          if [ "${AVAIL_GB:-0}" -lt 15 ]; then
+            echo "❌ ERROR: Only ${AVAIL_GB}GB free. Need >= 15GB before sync"
+            exit 1
+          fi
+          echo "✅ Disk space OK: ${AVAIL_GB}GB available"
+
+      - name: Initialize Repo and Sync
         shell: bash
         run: |
           set -euo pipefail
@@ -444,56 +376,17 @@ jobs:
             -b "common-${{ env.KERNEL_BRANCH }}" \
             --depth=1 --no-clone-bundle --no-tags
 
-          REPO_SYNC_EXTRA=""
-          repo sync --help 2>&1 | grep -q '\-\-optimized-fetch' && REPO_SYNC_EXTRA="--optimized-fetch"
-
           retry_command repo sync -c -j"$(nproc)" \
-            $REPO_SYNC_EXTRA --prune --no-clone-bundle --no-tags --force-sync --current-branch
+            --prune --no-clone-bundle --no-tags --force-sync --current-branch
 
-          if [ -e "common/BUILD.bazel" ]; then
-            sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' \
-              common/BUILD.bazel || true
-            rm -f common/android/abi_gki_protected_exports_* 2>/dev/null || true
-          fi
+          for dir in common; do
+            if [ -e "$dir/BUILD.bazel" ]; then
+              sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' \
+                "$dir/BUILD.bazel" || true
+            fi
+            rm -f "$dir/android/abi_gki_protected_exports_"* 2>/dev/null || true
+          done
           echo "✅ Repo sync complete"
-
-      - name: Prepare Helpers (patch + sha256)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > /tmp/helpers.sh << 'EOF'
-          verify_sha256() {
-            local file="$1"
-            local expected_sha="$2"
-            local actual_sha
-            actual_sha="$(sha256sum "$file" | awk '{print $1}')"
-            if [ "$actual_sha" != "$expected_sha" ]; then
-              echo "❌ FATAL: SHA256 mismatch for $(basename "$file")"
-              echo "   Expected: $expected_sha"
-              echo "   Got:      $actual_sha"
-              exit 1
-            fi
-            echo "✅ SHA256 verified: $(basename "$file")"
-          }
-
-          apply_patch_safe() {
-            local patch_file="$1"
-            local description="${2:-$1}"
-            [ -f "$patch_file" ] || { echo "⚠️ Patch not found: $patch_file"; return 1; }
-            echo "📝 Applying: $description"
-            if patch -p1 --dry-run < "$patch_file" >/dev/null 2>&1; then
-              patch -p1 < "$patch_file"
-              echo "✅ Applied: $description"
-              return 0
-            elif patch -p1 --dry-run -R < "$patch_file" >/dev/null 2>&1; then
-              echo "⏭️ Already applied: $description"
-              return 0
-            fi
-            echo "❌ Conflict: $description"
-            return 1
-          }
-          EOF
-          echo "✅ Helpers ready: /tmp/helpers.sh"
 
       - name: Kernel Version Handling
         shell: bash
@@ -536,8 +429,12 @@ jobs:
             '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' \
             ./common/Makefile)"
           echo "TKERNEL_VERSION=${NEW_VERSION}" >> "$GITHUB_ENV"
-          echo "KV1=${KERNEL_VERSION%%.*}"      >> "$GITHUB_ENV"
           echo "✅ Target kernel version: ${NEW_VERSION}"
+
+          KV="${KERNEL_VERSION}"
+          echo "KV1=${KV%%.*}"                            >> "$GITHUB_ENV"
+          echo "KV2=$(echo "$KV" | tr -d '.')"            >> "$GITHUB_ENV"
+          echo "KV3=$(echo "$NEW_VERSION" | tr -d '.')"   >> "$GITHUB_ENV"
 
       - name: Apply Kernel Suffix
         shell: bash
@@ -550,12 +447,13 @@ jobs:
 
           if [ -n "${INPUT_SUFFIX}" ]; then
             SUFFIX="${INPUT_SUFFIX}"
+            echo "✅ Using custom suffix: ${SUFFIX}"
           else
             RANDOM_DIGIT=$(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
             RANDOM_HASH=$(od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
             SUFFIX="${RANDOM_DIGIT}-o-g${RANDOM_HASH}"
+            echo "✅ Generated random suffix: ${SUFFIX}"
           fi
-          echo "✅ Kernel suffix: ${SUFFIX}"
 
           apply_suffix() {
             local path="$1"
@@ -577,33 +475,45 @@ jobs:
           apply_suffix "common/scripts/setlocalversion"
           apply_suffix "msm-kernel/scripts/setlocalversion"
           apply_suffix "external/dtc/scripts/setlocalversion"
+          echo "✅ Kernel suffix applied"
 
       - name: Resolve Manager Source
         id: manager
         shell: bash
         run: |
           set -euo pipefail
-          echo "manager_branch=main" >> "$GITHUB_OUTPUT"
+          case "${{ inputs.MANAGER_SOURCE }}" in
+            MD3_SPOOF)
+              echo "manager_branch=main"                       >> "$GITHUB_OUTPUT"
+              echo "manager_artifact=Spoofed-Manager-release"  >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "manager_branch=main"                       >> "$GITHUB_OUTPUT"
+              echo "manager_artifact=Manager-release"          >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
       - name: Add ReSukiSU
         shell: bash
         run: |
           set -euo pipefail
-          source /tmp/helpers.sh
           cd kernel_workspace
 
           IFS='/' read -r BRANCH_NAME KSU_CUSTOM_TAG MANUAL_HASH <<< "${{ inputs.KSU_META }}"
           echo "📦 Branch: ${BRANCH_NAME} | Tag: ${KSU_CUSTOM_TAG:-none} | Hash: ${MANUAL_HASH:-latest}"
 
-          KSU_SETUP_URL="https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/${KSU_SETUP_REF}/kernel/setup.sh"
-          curl -fL --proto '=https' --tlsv1.2 -o /tmp/ksu_setup.sh "$KSU_SETUP_URL"
-          verify_sha256 /tmp/ksu_setup.sh "${KSU_SETUP_SHA256}"
-          chmod +x /tmp/ksu_setup.sh
+          curl -fL --proto '=https' --tlsv1.2 \
+            -o /tmp/ksu_setup.sh \
+            "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh"
+          bash /tmp/ksu_setup.sh "$BRANCH_NAME"
 
-          /tmp/ksu_setup.sh "$BRANCH_NAME"
           cd KernelSU
 
-          if [ -n "${MANUAL_HASH}" ]; then
+          if [[ -n "${KSU_CUSTOM_TAG}" ]]; then
+            echo "KSU_CUSTOM_TAG=${KSU_CUSTOM_TAG}" >> "$GITHUB_ENV"
+          fi
+
+          if [[ -n "${MANUAL_HASH}" ]]; then
             git fetch origin "${BRANCH_NAME}" --depth=50
             git cat-file -e "${MANUAL_HASH}^{commit}" 2>/dev/null || {
               echo "❌ ERROR: commit not found: ${MANUAL_HASH}"
@@ -616,49 +526,26 @@ jobs:
           KSU_VERSION=$(( $(git rev-list --count HEAD 2>/dev/null || echo 13000) + 30700 ))
           echo "KSU_COMMIT_SHA=${KSU_COMMIT_SHA}" >> "$GITHUB_ENV"
           echo "KSUVER=${KSU_VERSION}"             >> "$GITHUB_ENV"
-          if [ -n "${KSU_CUSTOM_TAG}" ]; then
-            echo "KSU_CUSTOM_TAG=${KSU_CUSTOM_TAG}" >> "$GITHUB_ENV"
-          fi
           echo "✅ KSU commit: ${KSU_COMMIT_SHA} | version: ${KSU_VERSION}"
 
-      - name: Clone Patch Repos (Pinned)
+      - name: Apply Patches ReSukiSU
         shell: bash
         run: |
           set -euo pipefail
           cd kernel_workspace
 
-          git clone https://github.com/ShirkNeko/SukiSU_patch.git
-          git -C SukiSU_patch checkout "${SUKISU_PATCH_REF}"
-          echo "✅ SukiSU_patch pinned to ${SUKISU_PATCH_REF}"
-
-          git clone https://github.com/Numbersf/Action-Build.git -b SukiSU-Ultra
-          git -C Action-Build checkout "${ACTION_BUILD_REF}"
-          echo "✅ Action-Build pinned to ${ACTION_BUILD_REF}"
-
-      - name: Apply Patches (SUSFS + Toolkit + optional fixes)
-        shell: bash
-        run: |
-          set -euo pipefail
-          source /tmp/helpers.sh
-          cd kernel_workspace
+          [ -d "SukiSU_patch" ] || git clone https://github.com/ShirkNeko/SukiSU_patch.git
+          [ -d "Action-Build" ] || git clone --depth=1 -b SukiSU-Ultra \
+            https://github.com/Numbersf/Action-Build.git
 
           if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            SUSFS_META="${{ inputs.SUSFS_META }}"
             BR="gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
             [ "${{ inputs.SUSFS_DEV }}" = "true" ] && BR="${BR}-dev"
-            echo "📦 Cloning SUSFS branch: ${BR}"
 
             git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$BR" susfs4ksu
-
-            SUSFS_PIN="${{ inputs.SUSFS_COMMIT_PIN }}"
-            if [ -n "$SUSFS_PIN" ]; then
-              git -C susfs4ksu fetch origin "$SUSFS_PIN" --depth=200 2>/dev/null || \
-                git -C susfs4ksu fetch --unshallow 2>/dev/null || true
-              git -C susfs4ksu checkout "$SUSFS_PIN"
-              echo "✅ susfs4ksu pinned to ${SUSFS_PIN}"
-            fi
-
             cd susfs4ksu
-            SUSFS_META="${{ inputs.SUSFS_META }}"
+
             if [ -n "$SUSFS_META" ]; then
               if [[ "$SUSFS_META" =~ ^[0-9]+$ ]]; then
                 N="$SUSFS_META"
@@ -682,12 +569,77 @@ jobs:
           fi
 
           cd common
+
+          apply_patch_safe() {
+            local patch_file="$1"
+            local description="${2:-$1}"
+            [ -f "$patch_file" ] || { echo "⚠️ Patch not found: $patch_file"; return 1; }
+            echo "📝 Applying: $description"
+            if patch -p1 --dry-run < "$patch_file" >/dev/null 2>&1; then
+              patch -p1 < "$patch_file" && echo "✅ Applied: $description" && return 0
+            elif patch -p1 --dry-run -R < "$patch_file" >/dev/null 2>&1; then
+              echo "⏭️ Already applied: $description" && return 0
+            fi
+            echo "⚠️ Conflict: $description"
+            return 1
+          }
+
           apply_patch_safe "../Action-Build/patches/ksu_toolkit.patch" "KSU Toolkit" || true
 
           if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            GKI_V="${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
+            SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
+
+            if [ "$GKI_V" = "android13-5.15" ] && [ "${SUBLEVEL:-999}" -lt 123 ]; then
+              apply_patch_safe "../../Action-Build/patches/fix_5.15.legacy" "5.15 Legacy Fix" || true
+            fi
+
+            fake_patched=0
+            if [ "$GKI_V" = "android15-6.6" ]; then
+              if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                sed -i \
+                  -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' \
+                  -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' \
+                  ./fs/proc/task_mmu.c
+                fake_patched=1
+              fi
+            fi
+
+            if [ "$GKI_V" = "android14-6.1" ]; then
+              if ! grep -qxF $'\tif (!vma_pages(vma))' ./fs/proc/task_mmu.c; then
+                fake_patched=1
+              fi
+              if ! grep -qxF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
+                sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
+              fi
+            fi
+
+            if [ "$GKI_V" = "android12-5.10" ] || [ "$GKI_V" = "android13-5.15" ]; then
+              if ! grep -qxF $'\tif (!vma_pages(vma))' ./fs/proc/task_mmu.c; then
+                fake_patched=1
+              fi
+            fi
+
             apply_patch_safe \
               "50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" \
               "SUSFS Integration" || true
+
+            if [ "$fake_patched" = 1 ]; then
+              if [ "$GKI_V" = "android15-6.6" ]; then
+                sed -i \
+                  -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' \
+                  -e '/pagemap_entry_t \*res = NULL;/d' \
+                  ./fs/proc/task_mmu.c 2>/dev/null || true
+              fi
+              if [ "$GKI_V" = "android12-5.10" ] || \
+                 [ "$GKI_V" = "android13-5.15" ] || \
+                 [ "$GKI_V" = "android14-6.1" ]; then
+                if grep -qxF $'\t\tgoto show_pad;' ./fs/proc/task_mmu.c; then
+                  sed -i 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
+                fi
+              fi
+            fi
+
             if [ "${{ inputs.XUS_FIX }}" = "true" ]; then
               apply_patch_safe "../Action-Build/patches/No_5uS.patch" "5US Fix" || true
             fi
@@ -713,14 +665,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source /tmp/helpers.sh
           cd kernel_workspace/common
-
-          BBG_SETUP_URL="https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/${BBG_SETUP_REF}/setup.sh"
-          curl -fL --proto '=https' --tlsv1.2 -o /tmp/bbg_setup.sh "$BBG_SETUP_URL"
-          verify_sha256 /tmp/bbg_setup.sh "${BBG_SETUP_SHA256}"
-          chmod +x /tmp/bbg_setup.sh
-          /tmp/bbg_setup.sh fix_blkdev_rename
+          curl -fL --proto '=https' --tlsv1.2 \
+            -o /tmp/bbg_setup.sh \
+            "https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/main/setup.sh"
+          bash /tmp/bbg_setup.sh fix_blkdev_rename
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' \
             ./security/Kconfig
           echo "✅ LSM BBG applied"
@@ -742,6 +691,7 @@ jobs:
               >> "$CONFIG_FILE"
           fi
 
+          # Safe fix: NoN should NOT enable KPM
           case "${{ inputs.KPM }}" in
             KPM)     echo "CONFIG_KPM=y" >> "$CONFIG_FILE" ;;
             KPN|NoN) echo "CONFIG_KPM=n" >> "$CONFIG_FILE" ;;
@@ -764,17 +714,32 @@ jobs:
 
           echo "CONFIG_TMPFS_XATTR=y"     >> "$CONFIG_FILE"
           echo "CONFIG_TMPFS_POSIX_ACL=y" >> "$CONFIG_FILE"
-          echo "CONFIG_DEBUG_KERNEL=n"    >> "$CONFIG_FILE"
-          echo "CONFIG_DEBUG_INFO=n"      >> "$CONFIG_FILE"
-          echo "CONFIG_GDB_SCRIPTS=n"     >> "$CONFIG_FILE"
+
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y"    >> "$CONFIG_FILE"
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=n" >> "$CONFIG_FILE"
+          echo "CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y"     >> "$CONFIG_FILE"
+          echo "CONFIG_OPTIMIZE_INLINING=y"              >> "$CONFIG_FILE"
+
+          echo "CONFIG_DEBUG_KERNEL=n"       >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_INFO=n"         >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_INFO_DWARF4=n"  >> "$CONFIG_FILE"
+          echo "CONFIG_LOCK_DEBUGGING=n"     >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_MUTEXES=n"      >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_SPINLOCK=n"     >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_ATOMIC_SLEEP=n" >> "$CONFIG_FILE"
+          echo "CONFIG_GDB_SCRIPTS=n"        >> "$CONFIG_FILE"
 
           if [ "${BBR_ECN_ENABLED}" = "1" ]; then
-            echo "CONFIG_TCP_CONG_ADVANCED=y" >> "$CONFIG_FILE"
-            echo "CONFIG_TCP_CONG_BBR=y"      >> "$CONFIG_FILE"
-            echo "CONFIG_NET_SCH_FQ=y"        >> "$CONFIG_FILE"
-            echo "CONFIG_IP_ECN=y"            >> "$CONFIG_FILE"
-            echo "CONFIG_TCP_ECN=y"           >> "$CONFIG_FILE"
-            echo "CONFIG_IPV6_ECN=y"          >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_CONG_ADVANCED=y"  >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_CONG_BBR=y"       >> "$CONFIG_FILE"
+            echo "CONFIG_NET_SCH_FQ=y"         >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_CONG_BIC=n"       >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_CONG_WESTWOOD=n"  >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_CONG_HTCP=n"      >> "$CONFIG_FILE"
+            echo "CONFIG_IP_ECN=y"             >> "$CONFIG_FILE"
+            echo "CONFIG_TCP_ECN=y"            >> "$CONFIG_FILE"
+            echo "CONFIG_IPV6_ECN=y"           >> "$CONFIG_FILE"
+            echo "CONFIG_IP_NF_TARGET_ECN=y"   >> "$CONFIG_FILE"
           fi
 
           if [ "${LSM_ENABLED}" = "1" ]; then
@@ -782,7 +747,27 @@ jobs:
           fi
 
           if [[ "${CPU}" == sm* && "${NETFILTER_ENABLED}" = "1" ]]; then
+            echo "CONFIG_BPF_STREAM_PARSER=y"           >> "$CONFIG_FILE"
             echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$CONFIG_FILE"
+            echo "CONFIG_NETFILTER_XT_SET=y"            >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET=y"                      >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_MAX=65534"              >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_BITMAP_IP=y"            >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_BITMAP_IPMAC=y"         >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_BITMAP_PORT=y"          >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IP=y"              >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPMARK=y"          >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPPORT=y"          >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPPORTIP=y"        >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPPORTNET=y"       >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_IPMAC=y"           >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_MAC=y"             >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NETPORTNET=y"      >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NET=y"             >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NETNET=y"          >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NETPORT=y"         >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_HASH_NETIFACE=y"        >> "$CONFIG_FILE"
+            echo "CONFIG_IP_SET_LIST_SET=y"             >> "$CONFIG_FILE"
             echo "CONFIG_IP6_NF_NAT=y"                  >> "$CONFIG_FILE"
             echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y"    >> "$CONFIG_FILE"
           fi
@@ -795,11 +780,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source /tmp/helpers.sh
           PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches"
           cd kernel_workspace/common
           if [[ "${{ env.CPU }}" == sm* ]]; then
-            apply_patch_safe "${PATCH_DIR}/IPv6_NAT_FIX.patch" "IPv6 NAT fix for Snapdragon" || true
+            patch -p1 -F 3 < "${PATCH_DIR}/IPv6_NAT_FIX.patch" || true
+            echo "✅ IPv6 NAT fix applied"
           fi
 
       - name: Custom BUILD_TIME
@@ -840,7 +825,7 @@ jobs:
           sed -i \
             '0,/protected_module_names_list *= *":gki_aarch64_protected_module_names"/s//check_defconfig = "disabled"/' \
             kernel_workspace/common/BUILD.bazel
-          echo "✅ Module name protection disabled for android16-6.12"
+          echo "✅ Module protection disabled for android16-6.12"
 
       - name: Pre-Build Disk Check
         shell: bash
@@ -859,46 +844,44 @@ jobs:
         run: |
           set -euo pipefail
           cd kernel_workspace
+          ROOT="$PWD"
           NPROC=$(nproc)
           BUILD_THREADS=$((NPROC + 2))
           export MAKEFLAGS="-j${BUILD_THREADS}"
 
-          trap 'rm -rf common/out/*/intermediates out/*/intermediates 2>/dev/null || true' EXIT
+          trap 'rm -rf "$ROOT/common/out/"*/intermediates "$ROOT/out/"*/intermediates 2>/dev/null || true' EXIT
 
           echo "🚀 Build started at $(date -u) — ${BUILD_THREADS} threads"
           if [ -f "build/build.sh" ]; then
             time LTO=none BUILD_CONFIG=common/build.config.gki.aarch64 \
-              build/build.sh 2>&1 | tee build.log
+              build/build.sh 2>&1 | tee "$ROOT/build.log"
           else
             time tools/bazel build \
               --config=fast --lto=none --jobs="${BUILD_THREADS}" \
-              //common:kernel_aarch64_dist 2>&1 | tee build.log
+              //common:kernel_aarch64_dist 2>&1 | tee "$ROOT/build.log"
           fi
           echo "✅ Build completed at $(date -u)"
+
+          rm -rf "$ROOT/common/out/"*/intermediates "$ROOT/out/"*/intermediates 2>/dev/null || true
 
       - name: Ccache Statistics (Post-Build)
         if: ${{ !inputs.BUILD_NOCCACHE && always() }}
         shell: bash
         run: |
-          set -euo pipefail
-          if command -v ccache >/dev/null 2>&1 && \
-             [ "${CCACHE_DIR:-__unset__}" != "__unset__" ] && [ -n "${CCACHE_DIR}" ]; then
+          if command -v ccache >/dev/null 2>&1; then
             ccache -s || true
             HIT_RATE=$(ccache -s | grep "cache hit rate" | awk '{print $4}' || echo "N/A")
             echo "CCACHE_HIT_RATE=${HIT_RATE}" >> "$GITHUB_ENV"
           fi
 
-      - name: Make AnyKernel3 (Pinned)
+      - name: Make AnyKernel3
         shell: bash
         run: |
           set -euo pipefail
 
-          git clone https://github.com/Bouteillepleine/AnyKernel3
-          git -C AnyKernel3 checkout "${ANYKERNEL3_REF}"
-          rm -rf AnyKernel3/.git
-          echo "✅ AnyKernel3 pinned to ${ANYKERNEL3_REF}"
-
-          mkdir -p kernel_workspace/out/Final-Image-Find
+          git clone https://github.com/Bouteillepleine/AnyKernel3 --depth=1
+          rm -rf ./AnyKernel3/.git
+          mkdir -p kernel_workspace/out/Final-Image-Find/
 
           SEARCH_PATHS=(
             "kernel_workspace/out/*/dist"
@@ -907,32 +890,33 @@ jobs:
           )
 
           image_path=""
-          for p in "${SEARCH_PATHS[@]}"; do
-            image_path="$(find $p -name Image -type f \
+          for search_path in "${SEARCH_PATHS[@]}"; do
+            image_path="$(find $search_path -name "Image" -type f \
               -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2- || true)"
             [ -n "$image_path" ] && [ -f "$image_path" ] && break
           done
 
           if [ -z "$image_path" ] || [ ! -f "$image_path" ]; then
-            echo "❌ ERROR: Image not found"
+            echo "❌ ERROR: Image not found in any expected location"
             printf '   Searched: %s\n' "${SEARCH_PATHS[@]}"
             exit 1
           fi
 
           IMAGE_SIZE=$(stat -c%s "$image_path")
-          [ "$IMAGE_SIZE" -lt 10000000 ] && echo "⚠️ WARNING: Image suspiciously small: ${IMAGE_SIZE}B"
+          if [ "$IMAGE_SIZE" -lt 10000000 ]; then
+            echo "⚠️ WARNING: Image suspiciously small: ${IMAGE_SIZE} bytes"
+          fi
 
-          cp "$image_path" AnyKernel3/Image
+          cp "$image_path" ./AnyKernel3/Image
           cp "$image_path" kernel_workspace/out/Final-Image-Find/Image
           echo "✅ Image copied ($(( IMAGE_SIZE / 1024 / 1024 ))MB)"
 
-      - name: Download SUSFS Module (Release)
+      - name: Download SUSFS Module
         if: ${{ inputs.SUSFS_META != '-1' }}
         continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          source /tmp/helpers.sh
 
           RELEASE_URL="https://github.com/sidex15/ksu_module_susfs/releases/download/v1.5.2+/ksu_module_susfs_1.5.2+.zip"
           MODULE_ZIP="ksu_module_susfs_1.5.2+_Release.zip"
@@ -944,32 +928,25 @@ jobs:
               rm -f "$MODULE_ZIP"
               exit 0
             fi
-            EXPECTED_SHA256="${{ inputs.SUSFS_MODULE_SHA256 }}"
-            if [ -n "$EXPECTED_SHA256" ]; then
-              verify_sha256 "$MODULE_ZIP" "$EXPECTED_SHA256"
-            fi
-            cp "$MODULE_ZIP" AnyKernel3/ || true
+            cp "$MODULE_ZIP" ./AnyKernel3/ || true
             echo "✅ SUSFS module ready"
           else
             echo "⚠️ Download failed — continuing without SUSFS module"
           fi
 
-      - name: Apply patch_linux and Replace Image (Verified)
+      - name: Apply patch_linux and Replace Image
         if: ${{ inputs.KPM == 'KPM' }}
         shell: bash
         run: |
           set -euo pipefail
-          source /tmp/helpers.sh
-
-          OUT_DIR="${GITHUB_WORKSPACE}/kernel_workspace/out/Final-Image-Find"
           PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/SukiSU_patch/kpm"
-          cd "$OUT_DIR"
+          OUT_DIR="${GITHUB_WORKSPACE}/kernel_workspace/out/Final-Image-Find"
+          cd "${OUT_DIR}"
 
           cp "${PATCH_DIR}/patch_linux" .
           chmod +x patch_linux
-          verify_sha256 patch_linux "${{ inputs.PATCH_LINUX_SHA256 }}"
-
           ./patch_linux
+
           rm -f Image
           mv oImage Image
           cp Image "${GITHUB_WORKSPACE}/AnyKernel3/Image"
@@ -1010,7 +987,7 @@ jobs:
           ls -lh "${GITHUB_WORKSPACE}/${ZIP_NAME}"
 
       - name: Upload AK3 ZIP to GitHub Release
-        uses: softprops/action-gh-release@c062e08bd532815e2082a7e09ce9571a589e8b8e # v2.2.1
+        uses: softprops/action-gh-release@c062e08bd532815e2082a7e09ce9571a589e8b8e  # v2.2.1
         with:
           tag_name: ak3-${{ github.run_id }}
           name: AK3 build ${{ github.run_id }}
@@ -1064,6 +1041,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-}"
+          KSUVER="${KSUVER:-N/A}"
+          TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
+          KANDROID_VERSION="${KANDROID_VERSION:-N/A}"
+          KERNEL_VERSION="${KERNEL_VERSION:-N/A}"
           BUILD_TIME="${BUILD_TIME:-N/A}"
           BUILD_START_DATE="${BUILD_START_DATE:-N/A}"
           WARNINGS_COUNT="${WARNINGS_COUNT:-N/A}"
@@ -1073,10 +1055,6 @@ jobs:
           IMAGE_SHA256="${IMAGE_SHA256:-N/A}"
           IMAGE_SIZE="${IMAGE_SIZE:-N/A}"
           CCACHE_HIT_RATE="${CCACHE_HIT_RATE:-N/A}"
-          KANDROID_VERSION="${KANDROID_VERSION:-N/A}"
-          TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
-          KSUVER="${KSUVER:-N/A}"
-          KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-}"
           SUSFS_COMMIT_SHA="${SUSFS_COMMIT_SHA:-}"
 
           case "${{ job.status }}" in
@@ -1099,19 +1077,26 @@ jobs:
             SUSFS_DISPLAY="N/A"
           fi
 
+          [ "${LSM_ENABLED}" = "1" ]            && LSM_S="✅"      || LSM_S="❌"
+          [ "${BBR_ECN_ENABLED}" = "1" ]        && BBR_S="✅"      || BBR_S="❌"
+          [ "${NETFILTER_ENABLED}" = "1" ]      && NET_S="✅"      || NET_S="❌"
+          [ "${UNICODE_BYPASS_ENABLED}" = "1" ] && UNI_S="✅"      || UNI_S="❌"
+          [ "${XUS_FIX_ENABLED}" = "1" ]        && XUS_S="✅"      || XUS_S="❌"
+          [ "${BUILD_NOCCACHE_ENABLED}" = "1" ] && CC_S="❌ Off"   || CC_S="✅ On"
+
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          # ${STATUS_COLOR} ${{ env.DEVICE_NAME }} ReSukiSU Kernel Build ${STATUS_TEXT}
+          # ${STATUS_COLOR} ${{ env.DEVICE_NAME }} — ReSukiSU Build ${STATUS_TEXT}
 
           ## 📋 Build Info
           | Propriété | Valeur |
           |----------|--------|
           | **Début** | ${BUILD_START_DATE} |
           | **Durée** | ${BUILD_TIME} |
-          | **Warnings** | ${WARNINGS_COUNT} |
           | **Android** | ${KANDROID_VERSION} |
           | **Kernel** | ${TKERNEL_VERSION} |
           | **KSU** | ${KSU_DISPLAY} |
           | **SUSFS** | ${SUSFS_DISPLAY} |
+          | **Warnings** | ${WARNINGS_COUNT} |
 
           ## 📦 Output
           | Fichier | Détails |
@@ -1123,33 +1108,42 @@ jobs:
           | **Image SHA256** | \`${IMAGE_SHA256}\` |
           | **Release** | [Télécharger](${RELEASE_URL}) |
 
-          ## 📊 Performance
-          | Metric | Valeur |
-          |--------|--------|
-          | **Ccache hit rate** | ${CCACHE_HIT_RATE} |
+          ## ⚙️ Features
+          | Feature | Status |
+          |---------|--------|
+          | **KPM** | ${{ inputs.KPM }} |
+          | **LSM (BBG)** | ${LSM_S} |
+          | **BBR+ECN** | ${BBR_S} |
+          | **NETFILTER** | ${NET_S} |
+          | **Unicode Bypass** | ${UNI_S} |
+          | **5US Fix** | ${XUS_S} |
+          | **Ccache** | ${CC_S} (${CCACHE_HIT_RATE} hit) |
           EOF
 
           if [ "${{ job.status }}" = "success" ]; then
             cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           ## ✅ Étapes suivantes
-          1. 📥 Télécharger le ZIP depuis **[Releases](${RELEASE_URL})**
-          2. 📲 Flasher via TWRP/OrangeFox : \`${ZIP_NAME}\`
-          3. ✅ Vérifier l'installation du manager ReSukiSU
+          1. 📥 Télécharger depuis **[Releases](${RELEASE_URL})**
+          2. 📲 Flasher : \`${ZIP_NAME}\`
+          3. ✅ Vérifier le manager ReSukiSU
+
+          **ZIP SHA256:** \`${ZIP_SHA256}\`
+          **Image SHA256:** \`${IMAGE_SHA256}\`
           EOF
           elif [ "${{ job.status }}" = "failure" ]; then
             cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           ## 🔍 Dépannage
-          - Vérifier l'espace disque disponible
-          - Consulter les logs de compilation dans les artifacts
-          - Relancer avec \`BUILD_NOCCACHE=true\` si suspicion de cache corrompu
+          - Vérifier l'espace disque
+          - Consulter le log dans les artifacts
+          - Relancer avec \`BUILD_NOCCACHE=true\` si cache suspect
           EOF
           fi
 
       - name: Upload Build Log
         if: always()
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8  # v4.3.0
         with:
           name: build_log_${{ inputs.DEVICE }}_${{ github.run_id }}
           path: kernel_workspace/build.log
@@ -1160,14 +1154,11 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set -euo pipefail
           echo "::group::Disk Usage"
           df -h
           du -sh kernel_workspace 2>/dev/null || true
           du -h kernel_workspace 2>/dev/null | sort -rh | head -10 || true
-          if [ "${BUILD_NOCCACHE_ENABLED}" != "1" ] && \
-             [ "${CCACHE_DIR:-__unset__}" != "__unset__" ] && \
-             command -v ccache >/dev/null 2>&1; then
+          if [ "${BUILD_NOCCACHE_ENABLED}" != "1" ] && command -v ccache >/dev/null 2>&1; then
             ccache -s || true
           fi
           echo "::endgroup::"
@@ -1180,34 +1171,40 @@ jobs:
           if [ "${SPACE_NOCLEAN_ENABLED}" != "1" ]; then
             sudo rm -rf kernel_workspace/common/out kernel_workspace/out kernel_workspace/.repo \
               2>/dev/null || true
-            sudo find /tmp -mindepth 1 -not -name 'helpers.sh' -delete 2>/dev/null || true
+
+            # Safer cleanup: do NOT wipe all of /tmp
+            rm -f /tmp/ksu_setup.sh /tmp/bbg_setup.sh 2>/dev/null || true
             sudo rm -rf /var/tmp/* 2>/dev/null || true
-            if [ "${BUILD_NOCCACHE_ENABLED}" = "1" ] && \
-               [ "${CCACHE_DIR:-__unset__}" != "__unset__" ] && \
-               [ -n "${CCACHE_DIR}" ]; then
+
+            if [ "${BUILD_NOCCACHE_ENABLED}" = "1" ] && [ -n "${CCACHE_DIR:-}" ]; then
               sudo rm -rf "${CCACHE_DIR}" 2>/dev/null || true
             fi
           fi
-          df -h
+          df -h || true
 
       - name: Emergency Cleanup
         if: failure()
         shell: bash
         run: |
           set -euo pipefail
-          sudo rm -rf kernel_workspace                               2>/dev/null || true
-          sudo find /tmp -mindepth 1 -not -name 'helpers.sh' -delete 2>/dev/null || true
-          sudo rm -rf /var/log/* /var/tmp/*                          2>/dev/null || true
-          sudo rm -rf ~/.cache/*                                     2>/dev/null || true
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android       2>/dev/null || true
-          sudo docker system prune -af                               2>/dev/null || true
-          df -h
+          echo "::group::Emergency Cleanup"
+
+          sudo rm -rf kernel_workspace/.repo                      2>/dev/null || true
+          sudo rm -rf kernel_workspace/common/out/*/intermediates 2>/dev/null || true
+          sudo rm -rf kernel_workspace/out/*/intermediates        2>/dev/null || true
+
+          sudo rm -rf "$HOME/.cache"                              2>/dev/null || true
+          sudo rm -rf /var/tmp/*                                  2>/dev/null || true
+
+          sudo docker system prune -af                            2>/dev/null || true
+          df -h || true
+
+          echo "::endgroup::"
 
       - name: Final Status Check
         if: always()
         shell: bash
         run: |
-          set -euo pipefail
           case "${{ job.status }}" in
             success)
               echo "✅ BUILD SUCCESSFUL!"
@@ -1226,4 +1223,3 @@ jobs:
               echo "   Device  : ${{ env.DEVICE_NAME }}"
               ;;
           esac
-
