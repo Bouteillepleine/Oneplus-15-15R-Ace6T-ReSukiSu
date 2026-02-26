@@ -1110,6 +1110,118 @@ jobs:
           
           echo "::endgroup::"
 
+      - name: Download Latest SUSFS Module from CI        
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Download SUSFS Module from CI"
+          
+          echo "📦 Downloading latest SUSFS module from CI artifacts"
+          echo "🔍 Looking for artifacts from branch: v1.5.2+"
+          
+          # Récupérer le dernier run réussi pour la branche v1.5.2+
+          LATEST_RUN_ID=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" \
+            "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs?status=success&per_page=10" | \
+            jq -r '.workflow_runs[] | select(.head_branch == "v1.5.2+") | .id' | head -n 1)
+          
+          if [ -z "$LATEST_RUN_ID" ]; then
+            echo "⚠️ No successful CI run found for branch v1.5.2+"
+            echo "   Trying release fallback..."
+            
+            # Fallback vers release GitHub
+            RELEASE_URL="https://github.com/sidex15/ksu_module_susfs/releases/download/v1.5.2+/ksu_module_susfs_1.5.2+.zip"
+            MODULE_ZIP="ksu_module_susfs_1.5.2+_Release.zip"
+            
+            echo "📥 Downloading from release: $RELEASE_URL"
+            
+            if curl -Lf -o "$MODULE_ZIP" "$RELEASE_URL"; then
+              echo "✅ Downloaded release: $MODULE_ZIP"
+              
+              FILE_SIZE=$(stat -c%s "$MODULE_ZIP" 2>/dev/null || stat -f%z "$MODULE_ZIP" 2>/dev/null || echo "0")
+              if [ "$FILE_SIZE" -lt 1000 ]; then
+                echo "⚠️ Release file too small (${FILE_SIZE} bytes), might be corrupted"
+                rm -f "$MODULE_ZIP"
+                echo "::endgroup::"
+                exit 0
+              fi
+              
+              echo "📊 Module size: $(numfmt --to=iec-i --suffix=B "$FILE_SIZE" 2>/dev/null || echo "${FILE_SIZE} bytes")"
+              
+              if [ -d "./AnyKernel3" ]; then
+                cp "$MODULE_ZIP" ./AnyKernel3/
+                echo "✅ Copied release to AnyKernel3 folder"
+                echo "MODULE_DOWNLOADED=true" >> "$GITHUB_ENV"
+                echo "MODULE_SOURCE=Release" >> "$GITHUB_ENV"
+              fi
+            else
+              echo "⚠️ Both CI and Release download failed"
+              echo "   Continuing without SUSFS module"
+            fi
+            
+            echo "::endgroup::"
+            exit 0
+          fi
+          
+          echo "✅ Found run ID: $LATEST_RUN_ID"
+          
+          # Récupérer l'URL de l'artifact
+          ARTIFACT_URL=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" \
+            "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs/$LATEST_RUN_ID/artifacts" | \
+            jq -r '.artifacts[0].archive_download_url')
+          
+          if [ -z "$ARTIFACT_URL" ] || [ "$ARTIFACT_URL" = "null" ]; then
+            echo "⚠️ Failed to fetch artifact URL from run $LATEST_RUN_ID"
+            echo "::endgroup::"
+            exit 0
+          fi
+          
+          echo "📥 Downloading artifact from: $ARTIFACT_URL"
+          
+          # Télécharger l'artifact
+          MODULE_ZIP="ksu_module_susfs_1.5.2+_CI.zip"
+          if curl -Lf -H "Authorization: Bearer ${{ github.token }}" -o "$MODULE_ZIP" "$ARTIFACT_URL"; then
+            echo "✅ Downloaded: $MODULE_ZIP"
+            
+            # Vérifier que le fichier n'est pas vide
+            FILE_SIZE=$(stat -c%s "$MODULE_ZIP" 2>/dev/null || stat -f%z "$MODULE_ZIP" 2>/dev/null || echo "0")
+            if [ "$FILE_SIZE" -lt 1000 ]; then
+              echo "⚠️ Downloaded file is too small (${FILE_SIZE} bytes), might be corrupted"
+              rm -f "$MODULE_ZIP"
+              echo "::endgroup::"
+              exit 0
+            fi
+            
+            echo "📊 Module size: $(numfmt --to=iec-i --suffix=B "$FILE_SIZE" 2>/dev/null || echo "${FILE_SIZE} bytes")"
+            
+            # Copier dans AnyKernel3
+            if [ -d "./AnyKernel3" ]; then
+              cp "$MODULE_ZIP" ./AnyKernel3/
+              echo "✅ Copied to AnyKernel3 folder"
+              
+              # Vérifier que la copie a réussi
+              if [ -f "./AnyKernel3/$MODULE_ZIP" ]; then
+                COPIED_SIZE=$(stat -c%s "./AnyKernel3/$MODULE_ZIP" 2>/dev/null || stat -f%z "./AnyKernel3/$MODULE_ZIP" 2>/dev/null || echo "0")
+                if [ "$COPIED_SIZE" = "$FILE_SIZE" ]; then
+                  echo "✅ File integrity verified"
+                  echo "MODULE_DOWNLOADED=true" >> "$GITHUB_ENV"
+                  echo "MODULE_SOURCE=CI" >> "$GITHUB_ENV"
+                else
+                  echo "⚠️ File size mismatch after copy (original: $FILE_SIZE, copied: $COPIED_SIZE)"
+                fi
+              else
+                echo "⚠️ Failed to copy file to AnyKernel3 folder"
+              fi
+            else
+              echo "⚠️ AnyKernel3 folder not found"
+            fi
+          else
+            echo "⚠️ Failed to download artifact"
+            echo "   HTTP request failed or artifact not accessible"
+          fi
+          
+          echo "::endgroup::"
+
       - name: Apply patch_linux and Replace Image
         if: ${{ inputs.KPM == 'KPM' }}
         shell: bash
@@ -1151,14 +1263,59 @@ jobs:
           ZIP_NAME="AnyKernel3_${{ inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_${{ env.DEVICE_NAME_SAFE }}_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}.zip"
           echo "📦 Creating: $ZIP_NAME"
 
-          rm -f AnyKernel3/*.zip
-          (cd AnyKernel3 && zip -r9 "${GITHUB_WORKSPACE}/${ZIP_NAME}" . -x "*.git*" -x "*.zip")
+          # 🆕 AMÉLIORATION : Vérifier la présence du module SUSFS
+          SUSFS_MODULE_PRESENT=false
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            if ls AnyKernel3/ksu_module_susfs*.zip 1> /dev/null 2>&1; then
+              SUSFS_MODULE_PRESENT=true
+              SUSFS_MODULE_FILE=$(ls AnyKernel3/ksu_module_susfs*.zip | head -n1)
+              echo "✅ SUSFS module found: $(basename "$SUSFS_MODULE_FILE")"
+              SUSFS_MODULE_SIZE=$(stat -c%s "$SUSFS_MODULE_FILE" 2>/dev/null || stat -f%z "$SUSFS_MODULE_FILE" 2>/dev/null)
+              echo "📊 Module size: $(numfmt --to=iec-i --suffix=B "$SUSFS_MODULE_SIZE" 2>/dev/null || echo "${SUSFS_MODULE_SIZE} bytes")"
+            else
+              echo "⚠️ WARNING: SUSFS module not found in AnyKernel3 folder"
+              echo "   Expected: ksu_module_susfs*.zip"
+              echo "   Contents:"
+              ls -lh AnyKernel3/
+            fi
+          fi
+
+          # 🆕 AMÉLIORATION : Créer le ZIP en incluant ou excluant les .zip selon la présence du module
+          cd AnyKernel3
+          if [ "$SUSFS_MODULE_PRESENT" = true ]; then
+            echo "📦 Creating ZIP with SUSFS module included"
+            zip -r9 "${GITHUB_WORKSPACE}/${ZIP_NAME}" . \
+              -x "*.git*" \
+              -x "AnyKernel3*.zip"
+          else
+            echo "📦 Creating ZIP without SUSFS module (excluding all .zip files)"
+            zip -r9 "${GITHUB_WORKSPACE}/${ZIP_NAME}" . \
+              -x "*.git*" \
+              -x "*.zip"
+          fi
+          cd ..
 
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 
           ZIP_SIZE=$(du -h "${GITHUB_WORKSPACE}/${ZIP_NAME}" | awk '{print $1}')
           echo "✅ ZIP created: ${ZIP_NAME} (${ZIP_SIZE})"
           ls -lh "${GITHUB_WORKSPACE}/${ZIP_NAME}"
+
+          # 🆕 AMÉLIORATION : Vérifier le contenu du ZIP
+          echo ""
+          echo "📋 Verifying ZIP contents:"
+          unzip -l "${GITHUB_WORKSPACE}/${ZIP_NAME}" | grep -E "(Image|ksu_module_susfs|anykernel.sh)" || true
+
+          # 🆕 AMÉLIORATION : Vérification finale de la présence du module SUSFS
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            if unzip -l "${GITHUB_WORKSPACE}/${ZIP_NAME}" | grep -q "ksu_module_susfs.*\.zip"; then
+              echo ""
+              echo "✅ SUSFS module successfully included in ZIP"
+            else
+              echo ""
+              echo "⚠️ WARNING: SUSFS module NOT found in final ZIP"
+            fi
+          fi
 
           echo "::endgroup::"
 
