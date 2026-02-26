@@ -239,7 +239,7 @@ jobs:
 
       - name: Maximize Build Space
         if: ${{ !inputs.SPACE_NOCLEAN }}
-        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c  # v10
+        uses: easimon/maximize-build-space@v10
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
