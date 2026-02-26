@@ -129,7 +129,11 @@ jobs:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
-      CCACHE_MAXSIZE: 8G
+      CCACHE_MAXSIZE: 15G
+      CCACHE_COMPRESS: "true"
+      CCACHE_COMPRESSLEVEL: "1"
+      CCACHE_SLOPPINESS: "time_macros,include_file_mtime,include_file_ctime,file_stat_matches"
+
       LSM_ENABLED: ${{ inputs.LSM && '1' || '0' }}
       NETFILTER_ENABLED: ${{ inputs.NETFILTER && '1' || '0' }}
       BBR_ECN_ENABLED: ${{ inputs.BBR_ECN && '1' || '0' }}
@@ -173,7 +177,7 @@ jobs:
               echo "DEVICE_NAME_SAFE=Ace6T"               >> "$GITHUB_OUTPUT"
               ;;
             *)
-              echo "❌ ERROR: Unknown device: ${{ inputs.DEVICE }}"
+              echo "ERROR: Unknown device: ${{ inputs.DEVICE }}"
               exit 1
               ;;
           esac
@@ -184,10 +188,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "CPU=${{ steps.device_config.outputs.CPU }}"                            >> "$GITHUB_ENV"
-          echo "KERNEL_BRANCH=${{ steps.device_config.outputs.KERNEL_BRANCH }}"        >> "$GITHUB_ENV"
-          echo "DEVICE_NAME=${{ steps.device_config.outputs.DEVICE_NAME }}"            >> "$GITHUB_ENV"
-          echo "DEVICE_NAME_SAFE=${{ steps.device_config.outputs.DEVICE_NAME_SAFE }}"  >> "$GITHUB_ENV"
+          echo "CPU=${{ steps.device_config.outputs.CPU }}"                             >> "$GITHUB_ENV"
+          echo "KERNEL_BRANCH=${{ steps.device_config.outputs.KERNEL_BRANCH }}"         >> "$GITHUB_ENV"
+          echo "DEVICE_NAME=${{ steps.device_config.outputs.DEVICE_NAME }}"             >> "$GITHUB_ENV"
+          echo "DEVICE_NAME_SAFE=${{ steps.device_config.outputs.DEVICE_NAME_SAFE }}"   >> "$GITHUB_ENV"
 
       - name: Record Build Start Time
         shell: bash
@@ -204,19 +208,19 @@ jobs:
 
           KSU_META="${{ inputs.KSU_META }}"
           if [[ ! "$KSU_META" =~ ^[^/]+/[^/]*/[^/]*$ ]]; then
-            echo "❌ ERROR: KSU_META format invalide"
-            echo "   Format attendu: branch/tag/hash (ex: main/⚡Ultra⚡/abc123)"
-            echo "   Reçu: $KSU_META"
+            echo "ERROR: Invalid KSU_META format"
+            echo "   Expected: branch/tag/hash (e.g. main/UltraTag/abc123)"
+            echo "   Received: $KSU_META"
             exit 1
           fi
 
           SUBLEVEL="${{ inputs.SUBLEVEL }}"
           if [[ -n "$SUBLEVEL" && ! "$SUBLEVEL" =~ ^[0-9]+$ ]]; then
-            echo "❌ ERROR: SUBLEVEL doit être un nombre entier"
+            echo "ERROR: SUBLEVEL must be a positive integer"
             exit 1
           fi
 
-          echo "✅ All inputs validated"
+          echo "All inputs validated successfully"
           echo "::endgroup::"
 
       - name: Pre-build Space Boost
@@ -239,7 +243,7 @@ jobs:
 
       - name: Maximize Build Space
         if: ${{ !inputs.SPACE_NOCLEAN }}
-        uses: easimon/maximize-build-space@v10
+        uses: easimon/maximize-build-space@v10   # ← safe, resolves correctly
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
@@ -265,24 +269,24 @@ jobs:
         shell: bash
         run: |
           echo "::group::Build Configuration"
-          echo "📱 Device     : ${{ steps.device_config.outputs.DEVICE_NAME }}"
-          echo "🔧 Codename   : ${{ steps.device_config.outputs.DEVICE_CODENAME }}"
-          echo "💻 SoC        : ${{ steps.device_config.outputs.CPU }}"
-          echo "🌿 Branch     : ${{ steps.device_config.outputs.KERNEL_BRANCH }}"
-          echo "👤 Manager    : ${{ inputs.MANAGER_SOURCE }}"
-          echo "🔌 KPM        : ${{ inputs.KPM }}"
-          echo "🔐 SUSFS Meta : ${{ inputs.SUSFS_META }}"
-          echo "🎯 KSU Meta   : ${{ inputs.KSU_META }}"
-          echo "⏰ Build Time : ${{ inputs.BUILD_TIME }}"
-          echo "🏷️  Suffix     : ${{ inputs.SUFFIX }}"
-          echo "🛡️  LSM        : ${{ inputs.LSM }}"
-          echo "🌐 NETFILTER  : ${{ inputs.NETFILTER }}"
-          echo "🚀 BBR+ECN   : ${{ inputs.BBR_ECN }}"
-          echo "🔤 Unicode    : ${{ inputs.UNICODE_BYPASS }}"
-          echo "🔧 XUS Fix    : ${{ inputs.XUS_FIX }}"
-          echo "🧪 SUSFS Dev  : ${{ inputs.SUSFS_DEV }}"
-          echo "💾 NoClean    : ${{ inputs.SPACE_NOCLEAN }}"
-          echo "🗄️  NoCcache   : ${{ inputs.BUILD_NOCCACHE }}"
+          echo "Device     : ${{ steps.device_config.outputs.DEVICE_NAME }}"
+          echo "Codename   : ${{ steps.device_config.outputs.DEVICE_CODENAME }}"
+          echo "SoC        : ${{ steps.device_config.outputs.CPU }}"
+          echo "Branch     : ${{ steps.device_config.outputs.KERNEL_BRANCH }}"
+          echo "Manager    : ${{ inputs.MANAGER_SOURCE }}"
+          echo "KPM        : ${{ inputs.KPM }}"
+          echo "SUSFS Meta : ${{ inputs.SUSFS_META }}"
+          echo "KSU Meta   : ${{ inputs.KSU_META }}"
+          echo "Build Time : ${{ inputs.BUILD_TIME }}"
+          echo "Suffix     : ${{ inputs.SUFFIX }}"
+          echo "LSM        : ${{ inputs.LSM }}"
+          echo "NETFILTER  : ${{ inputs.NETFILTER }}"
+          echo "BBR+ECN    : ${{ inputs.BBR_ECN }}"
+          echo "Unicode    : ${{ inputs.UNICODE_BYPASS }}"
+          echo "XUS Fix    : ${{ inputs.XUS_FIX }}"
+          echo "SUSFS Dev  : ${{ inputs.SUSFS_DEV }}"
+          echo "NoClean    : ${{ inputs.SPACE_NOCLEAN }}"
+          echo "NoCcache   : ${{ inputs.BUILD_NOCCACHE }}"
           echo "::endgroup::"
 
       - name: Set Cache Environment
@@ -294,7 +298,7 @@ jobs:
           CCACHE_PATH="${GITHUB_WORKSPACE}/.ccache_${CACHE_KEY}"
           echo "CCACHE_DIR=${CCACHE_PATH}" >> "$GITHUB_ENV"
           mkdir -p "${CCACHE_PATH}"
-          echo "✅ Ccache directory: ${CCACHE_PATH}"
+          echo "Ccache directory set: ${CCACHE_PATH}"
 
       - name: Configure Git
         shell: bash
@@ -311,6 +315,7 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}
           restore-keys: |
+            ccache-${{ runner.os }}-${{ inputs.DEVICE }}-${{ env.KERNEL_BRANCH }}-
             ccache-${{ runner.os }}-${{ inputs.DEVICE }}-
             ccache-${{ runner.os }}-
 
@@ -322,8 +327,12 @@ jobs:
           if command -v ccache >/dev/null 2>&1; then
             mkdir -p "${CCACHE_DIR}"
             ccache -M "${CCACHE_MAXSIZE}" || true
+            ccache --set-config=compression=true || true
+            ccache --set-config=compression_level=1 || true
+            ccache --set-config=sloppiness=time_macros,include_file_mtime,include_file_ctime,file_stat_matches || true
             ccache -z || true
-            echo "✅ Ccache initialised (max ${CCACHE_MAXSIZE})"
+            echo "Ccache ready — max ${CCACHE_MAXSIZE}, compression ON (level 1)"
+            ccache -s || true
           fi
 
       - name: Install Repo Tool
@@ -344,10 +353,10 @@ jobs:
           df -h
           AVAIL_GB=$(df -BG "$GITHUB_WORKSPACE" | awk 'NR==2{gsub("G","",$4); print $4}')
           if [ "${AVAIL_GB:-0}" -lt 15 ]; then
-            echo "❌ ERROR: Only ${AVAIL_GB}GB free. Need >= 15GB before sync"
+            echo "ERROR: Only ${AVAIL_GB}GB free. Need >= 15GB before sync"
             exit 1
           fi
-          echo "✅ Disk space OK: ${AVAIL_GB}GB available"
+          echo "Disk space OK: ${AVAIL_GB}GB available"
 
       - name: Initialize Repo and Sync
         shell: bash
@@ -357,7 +366,7 @@ jobs:
           retry_command() {
             local max_attempts=3 timeout_s=5 attempt=1
             while [ $attempt -le $max_attempts ]; do
-              echo "🔄 Attempt $attempt/$max_attempts: $*"
+              echo "Attempt $attempt/$max_attempts: $*"
               if "$@"; then return 0; fi
               if [ $attempt -lt $max_attempts ]; then
                 sleep "$timeout_s"
@@ -386,7 +395,7 @@ jobs:
             fi
             rm -f "$dir/android/abi_gki_protected_exports_"* 2>/dev/null || true
           done
-          echo "✅ Repo sync complete"
+          echo "Repo sync complete"
 
       - name: Kernel Version Handling
         shell: bash
@@ -403,7 +412,7 @@ jobs:
           done
 
           if [ -z "$BRANCH" ]; then
-            echo "❌ ERROR: Could not detect BRANCH from build config"
+            echo "ERROR: Could not detect BRANCH from build config"
             exit 1
           fi
 
@@ -411,30 +420,30 @@ jobs:
           KERNEL_VERSION="${BRANCH#"${KANDROID_VERSION}-"}"
 
           if [ -z "$KANDROID_VERSION" ] || [ -z "$KERNEL_VERSION" ]; then
-            echo "❌ ERROR: Failed to parse versions from BRANCH=${BRANCH}"
+            echo "ERROR: Failed to parse versions from BRANCH=${BRANCH}"
             exit 1
           fi
 
           echo "KANDROID_VERSION=${KANDROID_VERSION}" >> "$GITHUB_ENV"
           echo "KERNEL_VERSION=${KERNEL_VERSION}"     >> "$GITHUB_ENV"
-          echo "✅ Android: ${KANDROID_VERSION} | Kernel: ${KERNEL_VERSION}"
+          echo "Android: ${KANDROID_VERSION} | Kernel: ${KERNEL_VERSION}"
 
           SUBLEVEL_INPUT="${{ inputs.SUBLEVEL }}"
           if [ -n "$SUBLEVEL_INPUT" ]; then
             sed -i "s/^\(SUBLEVEL[[:space:]]*=[[:space:]]*\).*/\1${SUBLEVEL_INPUT}/" ./common/Makefile
-            echo "✅ SUBLEVEL overridden to: ${SUBLEVEL_INPUT}"
+            echo "SUBLEVEL overridden to: ${SUBLEVEL_INPUT}"
           fi
 
           NEW_VERSION="$(awk \
             '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' \
             ./common/Makefile)"
           echo "TKERNEL_VERSION=${NEW_VERSION}" >> "$GITHUB_ENV"
-          echo "✅ Target kernel version: ${NEW_VERSION}"
+          echo "Target kernel version: ${NEW_VERSION}"
 
           KV="${KERNEL_VERSION}"
-          echo "KV1=${KV%%.*}"                            >> "$GITHUB_ENV"
-          echo "KV2=$(echo "$KV" | tr -d '.')"            >> "$GITHUB_ENV"
-          echo "KV3=$(echo "$NEW_VERSION" | tr -d '.')"   >> "$GITHUB_ENV"
+          echo "KV1=${KV%%.*}"                          >> "$GITHUB_ENV"
+          echo "KV2=$(echo "$KV" | tr -d '.')"          >> "$GITHUB_ENV"
+          echo "KV3=$(echo "$NEW_VERSION" | tr -d '.')" >> "$GITHUB_ENV"
 
       - name: Apply Kernel Suffix
         shell: bash
@@ -447,12 +456,12 @@ jobs:
 
           if [ -n "${INPUT_SUFFIX}" ]; then
             SUFFIX="${INPUT_SUFFIX}"
-            echo "✅ Using custom suffix: ${SUFFIX}"
+            echo "Using custom suffix: ${SUFFIX}"
           else
             RANDOM_DIGIT=$(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
             RANDOM_HASH=$(od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
             SUFFIX="${RANDOM_DIGIT}-o-g${RANDOM_HASH}"
-            echo "✅ Generated random suffix: ${SUFFIX}"
+            echo "Generated random suffix: ${SUFFIX}"
           fi
 
           apply_suffix() {
@@ -475,7 +484,7 @@ jobs:
           apply_suffix "common/scripts/setlocalversion"
           apply_suffix "msm-kernel/scripts/setlocalversion"
           apply_suffix "external/dtc/scripts/setlocalversion"
-          echo "✅ Kernel suffix applied"
+          echo "Kernel suffix applied"
 
       - name: Resolve Manager Source
         id: manager
@@ -484,12 +493,12 @@ jobs:
           set -euo pipefail
           case "${{ inputs.MANAGER_SOURCE }}" in
             MD3_SPOOF)
-              echo "manager_branch=main"                       >> "$GITHUB_OUTPUT"
-              echo "manager_artifact=Spoofed-Manager-release"  >> "$GITHUB_OUTPUT"
+              echo "manager_branch=main"                      >> "$GITHUB_OUTPUT"
+              echo "manager_artifact=Spoofed-Manager-release" >> "$GITHUB_OUTPUT"
               ;;
             *)
-              echo "manager_branch=main"                       >> "$GITHUB_OUTPUT"
-              echo "manager_artifact=Manager-release"          >> "$GITHUB_OUTPUT"
+              echo "manager_branch=main"                      >> "$GITHUB_OUTPUT"
+              echo "manager_artifact=Manager-release"         >> "$GITHUB_OUTPUT"
               ;;
           esac
 
@@ -500,7 +509,7 @@ jobs:
           cd kernel_workspace
 
           IFS='/' read -r BRANCH_NAME KSU_CUSTOM_TAG MANUAL_HASH <<< "${{ inputs.KSU_META }}"
-          echo "📦 Branch: ${BRANCH_NAME} | Tag: ${KSU_CUSTOM_TAG:-none} | Hash: ${MANUAL_HASH:-latest}"
+          echo "Branch: ${BRANCH_NAME} | Tag: ${KSU_CUSTOM_TAG:-none} | Hash: ${MANUAL_HASH:-latest}"
 
           curl -fL --proto '=https' --tlsv1.2 \
             -o /tmp/ksu_setup.sh \
@@ -516,7 +525,7 @@ jobs:
           if [[ -n "${MANUAL_HASH}" ]]; then
             git fetch origin "${BRANCH_NAME}" --depth=50
             git cat-file -e "${MANUAL_HASH}^{commit}" 2>/dev/null || {
-              echo "❌ ERROR: commit not found: ${MANUAL_HASH}"
+              echo "ERROR: Commit not found: ${MANUAL_HASH}"
               exit 1
             }
             git checkout "${MANUAL_HASH}"
@@ -526,7 +535,7 @@ jobs:
           KSU_VERSION=$(( $(git rev-list --count HEAD 2>/dev/null || echo 13000) + 30700 ))
           echo "KSU_COMMIT_SHA=${KSU_COMMIT_SHA}" >> "$GITHUB_ENV"
           echo "KSUVER=${KSU_VERSION}"             >> "$GITHUB_ENV"
-          echo "✅ KSU commit: ${KSU_COMMIT_SHA} | version: ${KSU_VERSION}"
+          echo "KSU commit: ${KSU_COMMIT_SHA} | version: ${KSU_VERSION}"
 
       - name: Apply Patches ReSukiSU
         shell: bash
@@ -549,7 +558,7 @@ jobs:
             if [ -n "$SUSFS_META" ]; then
               if [[ "$SUSFS_META" =~ ^[0-9]+$ ]]; then
                 N="$SUSFS_META"
-                [ "$N" -le 100 ] || { echo "❌ ERROR: SUSFS_META HEAD~N too large (max 100)"; exit 1; }
+                [ "$N" -le 100 ] || { echo "ERROR: SUSFS_META HEAD~N too large (max 100)"; exit 1; }
                 git fetch --deepen="$((N + 1))" 2>/dev/null || true
                 git checkout "HEAD~${N}"
               else
@@ -559,11 +568,10 @@ jobs:
 
             SUSFS_COMMIT_SHA="$(git rev-parse HEAD)"
             echo "SUSFS_COMMIT_SHA=${SUSFS_COMMIT_SHA}" >> "$GITHUB_ENV"
-            echo "✅ SUSFS commit: ${SUSFS_COMMIT_SHA}"
+            echo "SUSFS commit: ${SUSFS_COMMIT_SHA}"
             cd ..
 
-            cp "./susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" \
-               ./common/
+            cp "./susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" ./common/
             cp ./susfs4ksu/kernel_patches/fs/*            ./common/fs/
             cp ./susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
           fi
@@ -573,14 +581,14 @@ jobs:
           apply_patch_safe() {
             local patch_file="$1"
             local description="${2:-$1}"
-            [ -f "$patch_file" ] || { echo "⚠️ Patch not found: $patch_file"; return 1; }
-            echo "📝 Applying: $description"
+            [ -f "$patch_file" ] || { echo "Patch not found: $patch_file"; return 1; }
+            echo "Applying: $description"
             if patch -p1 --dry-run < "$patch_file" >/dev/null 2>&1; then
-              patch -p1 < "$patch_file" && echo "✅ Applied: $description" && return 0
+              patch -p1 < "$patch_file" && echo "Applied: $description" && return 0
             elif patch -p1 --dry-run -R < "$patch_file" >/dev/null 2>&1; then
-              echo "⏭️ Already applied: $description" && return 0
+              echo "Already applied: $description" && return 0
             fi
-            echo "⚠️ Conflict: $description"
+            echo "Conflict: $description"
             return 1
           }
 
@@ -650,7 +658,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ -n "${KV1:-}" ] || { echo "❌ ERROR: KV1 not set"; exit 1; }
+          [ -n "${KV1:-}" ] || { echo "ERROR: KV1 not set"; exit 1; }
           PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches"
           cd kernel_workspace/common
           if [ "${KV1}" -lt 6 ]; then
@@ -658,7 +666,7 @@ jobs:
           else
             patch -p1 --forward < "${PATCH_DIR}/unicode_bypass_fix_6.1+.patch" || true
           fi
-          echo "✅ Unicode bypass applied"
+          echo "Unicode bypass applied"
 
       - name: Apply LSM_BBG
         if: ${{ inputs.LSM }}
@@ -672,7 +680,7 @@ jobs:
           bash /tmp/bbg_setup.sh fix_blkdev_rename
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' \
             ./security/Kconfig
-          echo "✅ LSM BBG applied"
+          echo "LSM BBG applied"
 
       - name: Add Configuration Settings
         shell: bash
@@ -691,7 +699,6 @@ jobs:
               >> "$CONFIG_FILE"
           fi
 
-          # Safe fix: NoN should NOT enable KPM
           case "${{ inputs.KPM }}" in
             KPM)     echo "CONFIG_KPM=y" >> "$CONFIG_FILE" ;;
             KPN|NoN) echo "CONFIG_KPM=n" >> "$CONFIG_FILE" ;;
@@ -773,7 +780,7 @@ jobs:
           fi
 
           sed -i 's/check_defconfig//' ./build.config.gki
-          echo "✅ Kernel configuration written"
+          echo "Kernel configuration written"
 
       - name: Fix IPv6_NAT Error
         if: ${{ inputs.NETFILTER }}
@@ -784,7 +791,7 @@ jobs:
           cd kernel_workspace/common
           if [[ "${{ env.CPU }}" == sm* ]]; then
             patch -p1 -F 3 < "${PATCH_DIR}/IPv6_NAT_FIX.patch" || true
-            echo "✅ IPv6 NAT fix applied"
+            echo "IPv6 NAT fix applied"
           fi
 
       - name: Custom BUILD_TIME
@@ -799,7 +806,7 @@ jobs:
           fi
           echo "KBUILD_BUILD_TIMESTAMP=${DATESTR}" >> "$GITHUB_ENV"
           echo "KBUILD_BUILD_VERSION=1"            >> "$GITHUB_ENV"
-          echo "✅ Build timestamp: ${DATESTR}"
+          echo "Build timestamp: ${DATESTR}"
 
           cd kernel_workspace
           for f in common/scripts/mkcompile_h msm-kernel/scripts/mkcompile_h; do
@@ -813,7 +820,7 @@ jobs:
                   "s{cat <<EOF}{cat <<EOF\n#undef UTS_VERSION\n#define UTS_VERSION \"#1 SMP PREEMPT $DATESTR\" } unless /UTS_VERSION/" \
                   "$f"
               fi
-              echo "✅ Modified: $f"
+              echo "Modified: $f"
             fi
           done
 
@@ -825,7 +832,7 @@ jobs:
           sed -i \
             '0,/protected_module_names_list *= *":gki_aarch64_protected_module_names"/s//check_defconfig = "disabled"/' \
             kernel_workspace/common/BUILD.bazel
-          echo "✅ Module protection disabled for android16-6.12"
+          echo "Module protection disabled for android16-6.12"
 
       - name: Pre-Build Disk Check
         shell: bash
@@ -834,10 +841,10 @@ jobs:
           df -h
           AVAIL_GB=$(df -BG "$GITHUB_WORKSPACE" | awk 'NR==2{gsub("G","",$4); print $4}')
           if [ "${AVAIL_GB:-0}" -lt 10 ]; then
-            echo "❌ ERROR: Only ${AVAIL_GB}GB free. Minimum 10GB required"
+            echo "ERROR: Only ${AVAIL_GB}GB free. Minimum 10GB required"
             exit 1
           fi
-          echo "✅ Pre-build disk OK: ${AVAIL_GB}GB available"
+          echo "Pre-build disk OK: ${AVAIL_GB}GB available"
 
       - name: Build Kernel
         shell: bash
@@ -846,22 +853,32 @@ jobs:
           cd kernel_workspace
           ROOT="$PWD"
           NPROC=$(nproc)
-          BUILD_THREADS=$((NPROC + 2))
+
+          RAM_GB=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 ))
+          MAX_BY_RAM=$(( RAM_GB * 2 / 3 ))
+          BUILD_THREADS=$(( NPROC * 2 < MAX_BY_RAM ? NPROC * 2 : MAX_BY_RAM ))
+          BUILD_THREADS=$(( BUILD_THREADS < 4 ? 4 : BUILD_THREADS ))
+
           export MAKEFLAGS="-j${BUILD_THREADS}"
 
           trap 'rm -rf "$ROOT/common/out/"*/intermediates "$ROOT/out/"*/intermediates 2>/dev/null || true' EXIT
 
-          echo "🚀 Build started at $(date -u) — ${BUILD_THREADS} threads"
+          echo "Build started at $(date -u)"
+          echo "  vCPU: ${NPROC} | RAM: ${RAM_GB}GB | Threads: ${BUILD_THREADS}"
+
           if [ -f "build/build.sh" ]; then
             time LTO=none BUILD_CONFIG=common/build.config.gki.aarch64 \
               build/build.sh 2>&1 | tee "$ROOT/build.log"
           else
             time tools/bazel build \
-              --config=fast --lto=none --jobs="${BUILD_THREADS}" \
+              --config=fast --lto=none \
+              --jobs="${BUILD_THREADS}" \
+              --local_ram_resources="HOST_RAM*.8" \
+              --local_cpu_resources="${BUILD_THREADS}" \
               //common:kernel_aarch64_dist 2>&1 | tee "$ROOT/build.log"
           fi
-          echo "✅ Build completed at $(date -u)"
 
+          echo "Build completed at $(date -u)"
           rm -rf "$ROOT/common/out/"*/intermediates "$ROOT/out/"*/intermediates 2>/dev/null || true
 
       - name: Ccache Statistics (Post-Build)
@@ -897,19 +914,19 @@ jobs:
           done
 
           if [ -z "$image_path" ] || [ ! -f "$image_path" ]; then
-            echo "❌ ERROR: Image not found in any expected location"
+            echo "ERROR: Image not found in any expected location"
             printf '   Searched: %s\n' "${SEARCH_PATHS[@]}"
             exit 1
           fi
 
           IMAGE_SIZE=$(stat -c%s "$image_path")
           if [ "$IMAGE_SIZE" -lt 10000000 ]; then
-            echo "⚠️ WARNING: Image suspiciously small: ${IMAGE_SIZE} bytes"
+            echo "WARNING: Image suspiciously small: ${IMAGE_SIZE} bytes"
           fi
 
           cp "$image_path" ./AnyKernel3/Image
           cp "$image_path" kernel_workspace/out/Final-Image-Find/Image
-          echo "✅ Image copied ($(( IMAGE_SIZE / 1024 / 1024 ))MB)"
+          echo "Image copied ($(( IMAGE_SIZE / 1024 / 1024 ))MB)"
 
       - name: Download SUSFS Module
         if: ${{ inputs.SUSFS_META != '-1' }}
@@ -924,14 +941,14 @@ jobs:
           if curl -Lf -o "$MODULE_ZIP" "$RELEASE_URL"; then
             FILE_SIZE=$(stat -c%s "$MODULE_ZIP" 2>/dev/null || echo "0")
             if [ "$FILE_SIZE" -lt 1000 ]; then
-              echo "⚠️ File too small (${FILE_SIZE}B) — discarding"
+              echo "WARNING: File too small (${FILE_SIZE}B) — discarding"
               rm -f "$MODULE_ZIP"
               exit 0
             fi
             cp "$MODULE_ZIP" ./AnyKernel3/ || true
-            echo "✅ SUSFS module ready"
+            echo "SUSFS module ready"
           else
-            echo "⚠️ Download failed — continuing without SUSFS module"
+            echo "WARNING: Download failed — continuing without SUSFS module"
           fi
 
       - name: Apply patch_linux and Replace Image
@@ -950,7 +967,7 @@ jobs:
           rm -f Image
           mv oImage Image
           cp Image "${GITHUB_WORKSPACE}/AnyKernel3/Image"
-          echo "✅ KPM patched Image in place"
+          echo "KPM patched Image in place"
 
       - name: Set zip Suffix
         id: suffix
@@ -983,11 +1000,11 @@ jobs:
           cd ..
 
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
-          echo "✅ ZIP created: ${ZIP_NAME}"
+          echo "ZIP created: ${ZIP_NAME}"
           ls -lh "${GITHUB_WORKSPACE}/${ZIP_NAME}"
 
       - name: Upload AK3 ZIP to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c062e08bd532815e2082a7e09ce9571a589e8b8e  # v2.2.1
         with:
           tag_name: ak3-${{ github.run_id }}
           name: AK3 build ${{ github.run_id }}
@@ -1077,38 +1094,38 @@ jobs:
             SUSFS_DISPLAY="N/A"
           fi
 
-          [ "${LSM_ENABLED}" = "1" ]            && LSM_S="✅"      || LSM_S="❌"
-          [ "${BBR_ECN_ENABLED}" = "1" ]        && BBR_S="✅"      || BBR_S="❌"
-          [ "${NETFILTER_ENABLED}" = "1" ]      && NET_S="✅"      || NET_S="❌"
-          [ "${UNICODE_BYPASS_ENABLED}" = "1" ] && UNI_S="✅"      || UNI_S="❌"
-          [ "${XUS_FIX_ENABLED}" = "1" ]        && XUS_S="✅"      || XUS_S="❌"
-          [ "${BUILD_NOCCACHE_ENABLED}" = "1" ] && CC_S="❌ Off"   || CC_S="✅ On"
+          [ "${LSM_ENABLED}" = "1" ]            && LSM_S="✅"    || LSM_S="❌"
+          [ "${BBR_ECN_ENABLED}" = "1" ]        && BBR_S="✅"    || BBR_S="❌"
+          [ "${NETFILTER_ENABLED}" = "1" ]      && NET_S="✅"    || NET_S="❌"
+          [ "${UNICODE_BYPASS_ENABLED}" = "1" ] && UNI_S="✅"    || UNI_S="❌"
+          [ "${XUS_FIX_ENABLED}" = "1" ]        && XUS_S="✅"    || XUS_S="❌"
+          [ "${BUILD_NOCCACHE_ENABLED}" = "1" ] && CC_S="❌ Off" || CC_S="✅ On"
 
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           # ${STATUS_COLOR} ${{ env.DEVICE_NAME }} — ReSukiSU Build ${STATUS_TEXT}
 
-          ## 📋 Build Info
-          | Propriété | Valeur |
-          |----------|--------|
-          | **Début** | ${BUILD_START_DATE} |
-          | **Durée** | ${BUILD_TIME} |
+          ## Build Info
+          | Property | Value |
+          |----------|-------|
+          | **Started** | ${BUILD_START_DATE} |
+          | **Duration** | ${BUILD_TIME} |
           | **Android** | ${KANDROID_VERSION} |
           | **Kernel** | ${TKERNEL_VERSION} |
           | **KSU** | ${KSU_DISPLAY} |
           | **SUSFS** | ${SUSFS_DISPLAY} |
           | **Warnings** | ${WARNINGS_COUNT} |
 
-          ## 📦 Output
-          | Fichier | Détails |
-          |---------|---------|
+          ## Output
+          | File | Details |
+          |------|---------|
           | **ZIP** | \`${ZIP_NAME}\` |
           | **ZIP Size** | ${ZIP_SIZE} |
           | **ZIP SHA256** | \`${ZIP_SHA256}\` |
           | **Image Size** | ${IMAGE_SIZE} |
           | **Image SHA256** | \`${IMAGE_SHA256}\` |
-          | **Release** | [Télécharger](${RELEASE_URL}) |
+          | **Release** | [Download](${RELEASE_URL}) |
 
-          ## ⚙️ Features
+          ## Features
           | Feature | Status |
           |---------|--------|
           | **KPM** | ${{ inputs.KPM }} |
@@ -1119,27 +1136,6 @@ jobs:
           | **5US Fix** | ${XUS_S} |
           | **Ccache** | ${CC_S} (${CCACHE_HIT_RATE} hit) |
           EOF
-
-          if [ "${{ job.status }}" = "success" ]; then
-            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-
-          ## ✅ Étapes suivantes
-          1. 📥 Télécharger depuis **[Releases](${RELEASE_URL})**
-          2. 📲 Flasher : \`${ZIP_NAME}\`
-          3. ✅ Vérifier le manager ReSukiSU
-
-          **ZIP SHA256:** \`${ZIP_SHA256}\`
-          **Image SHA256:** \`${IMAGE_SHA256}\`
-          EOF
-          elif [ "${{ job.status }}" = "failure" ]; then
-            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-
-          ## 🔍 Dépannage
-          - Vérifier l'espace disque
-          - Consulter le log dans les artifacts
-          - Relancer avec \`BUILD_NOCCACHE=true\` si cache suspect
-          EOF
-          fi
 
       - name: Upload Build Log
         if: always()
@@ -1172,7 +1168,6 @@ jobs:
             sudo rm -rf kernel_workspace/common/out kernel_workspace/out kernel_workspace/.repo \
               2>/dev/null || true
 
-            # Safer cleanup: do NOT wipe all of /tmp
             rm -f /tmp/ksu_setup.sh /tmp/bbg_setup.sh 2>/dev/null || true
             sudo rm -rf /var/tmp/* 2>/dev/null || true
 
@@ -1207,19 +1202,19 @@ jobs:
         run: |
           case "${{ job.status }}" in
             success)
-              echo "✅ BUILD SUCCESSFUL!"
-              echo "   Device  : ${{ env.DEVICE_NAME }}"
-              echo "   ZIP     : ${ZIP_NAME:-N/A}"
-              echo "   SHA256  : ${ZIP_SHA256:-N/A}"
-              echo "   Duration: ${BUILD_TIME:-N/A}"
+              echo "BUILD SUCCESSFUL!"
+              echo "  Device  : ${{ env.DEVICE_NAME }}"
+              echo "  ZIP     : ${ZIP_NAME:-N/A}"
+              echo "  SHA256  : ${ZIP_SHA256:-N/A}"
+              echo "  Duration: ${BUILD_TIME:-N/A}"
               ;;
             failure)
-              echo "❌ BUILD FAILED!"
-              echo "   Device  : ${{ env.DEVICE_NAME }}"
-              echo "   Check the build log artifact for details"
+              echo "BUILD FAILED!"
+              echo "  Device  : ${{ env.DEVICE_NAME }}"
+              echo "  Check the build log artifact for details"
               ;;
             *)
-              echo "⚠️  BUILD CANCELLED"
-              echo "   Device  : ${{ env.DEVICE_NAME }}"
+              echo "BUILD CANCELLED"
+              echo "  Device  : ${{ env.DEVICE_NAME }}"
               ;;
           esac
