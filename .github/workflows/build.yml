@@ -689,6 +689,31 @@ jobs:
             return 1
           }
 
+          fix_op15_recovery_bootloop_sus_mount() {
+            # Fix OP15 Recovery Bootloop (SUS_MOUNT mnt_parent panic)
+            # 1) Guard against NULL/self-parent while walking mnt_parent
+            if [ -f ./fs/statfs.c ] && grep -qF 'for (; mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }' ./fs/statfs.c; then
+              echo "🛠️  OP15 fix: applying mnt_parent guard (fs/statfs.c)"
+              sed -i 's/for (; mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }/for (; mnt->mnt_id >= DEFAULT_KSU_MNT_ID \&\& mnt->mnt_parent \&\& mnt != mnt->mnt_parent; mnt = mnt->mnt_parent) { }/g' ./fs/statfs.c
+            fi
+
+            if [ -f ./fs/proc/fd.c ] && grep -qF 'for (; mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }' ./fs/proc/fd.c; then
+              echo "🛠️  OP15 fix: applying mnt_parent guard (fs/proc/fd.c)"
+              sed -i 's/for (; mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }/for (; mnt->mnt_id >= DEFAULT_KSU_MNT_ID \&\& mnt->mnt_parent \&\& mnt != mnt->mnt_parent; mnt = mnt->mnt_parent) { }/g' ./fs/proc/fd.c
+            fi
+
+            # 2) SUS_MOUNT statfs fix: keep mnt_root only for "umounted apps", use path->dentry for recovery/system
+            if [ -f ./fs/statfs.c ] && grep -qF 'error = statfs_by_dentry(mnt->mnt.mnt_root, buf);' ./fs/statfs.c; then
+              echo "🛠️  OP15 fix: applying statfs fallback for recovery/system (fs/statfs.c)"
+              sed -i 's/error = statfs_by_dentry(mnt->mnt.mnt_root, buf);/if (likely(susfs_is_current_proc_umounted_app())) { error = statfs_by_dentry(mnt->mnt.mnt_root, buf); } else { error = statfs_by_dentry(path->dentry, buf); }/g' ./fs/statfs.c
+            fi
+
+            # Sanity warning if patterns still exist (means sed didn't match your tree)
+            if grep -qF 'for (; mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }' ./fs/statfs.c ./fs/proc/fd.c 2>/dev/null; then
+              echo "::warning::OP15 mnt_parent guard pattern still present after patch attempt"
+            fi
+          }
+
           # Apply KSU Toolkit patch
           apply_patch_safe "../Action-Build/patches/ksu_toolkit.patch" "KSU Toolkit" || true
 
@@ -749,6 +774,9 @@ jobs:
                 fi
               fi
             fi
+
+            # ✅ OP15 Recovery Bootloop fix
+            fix_op15_recovery_bootloop_sus_mount
 
             # Apply 5US fix if enabled
             if [ "${{ inputs.XUS_FIX }}" = "true" ]; then
